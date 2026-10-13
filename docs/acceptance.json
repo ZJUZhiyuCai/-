@@ -1,0 +1,402 @@
+{
+  "schema_version": 1,
+  "updated_date": "2026-10-13",
+  "reference_product": "方正书版 11.0",
+  "scope": "当前开发工作树验收快照；非版本发布或完成证明",
+  "overall_status": "incomplete",
+  "original_compatibility_status": "not_verified",
+  "reference_pdf_baseline": "missing",
+  "test_snapshot": {
+    "source": "2026-10-13 最终 Node 全量执行 63 项（62通过/1跳过）；Python 全量22通过。",
+    "node": {
+      "passed": 62,
+      "failed": 0,
+      "skipped": 1,
+      "skip_reason": "可选浏览器测试默认未启用，不算通过"
+    },
+    "python": {
+      "passed": 22,
+      "failed": 0
+    }
+  },
+  "status_definitions": {
+    "passed_for_stated_cases": "仅所列局部样例或单元测试通过，不表示原版整项兼容通过",
+    "not_verified": "尚未证明，不能等同已测失败或已完成",
+    "partial": "已有有限实现，仍有明确功能或验证缺口",
+    "not_completed": "工作尚未完成",
+    "not_implemented": "此处列出的功能尚未提供"
+  },
+  "items": [
+    {
+      "id": "editor",
+      "title": "基础编辑与结构",
+      "implementation": "partial",
+      "local_acceptance": "passed_for_stated_cases",
+      "original_11_compatibility": "not_verified",
+      "evidence": [
+        "既有跨片段编辑、保存恢复和撤销检查；本轮模型/编辑测试纳入 Node 汇总。"
+      ],
+      "remaining": [
+        "跨段自由富文本、全IME/字素组合、持续编辑恢复未全面验收。"
+      ],
+      "code": [
+        "src/app.mjs",
+        "src/model.mjs"
+      ]
+    },
+    {
+      "id": "find_replace",
+      "title": "查找替换与样式",
+      "implementation": "partial",
+      "local_acceptance": "passed_for_stated_cases",
+      "original_11_compatibility": "not_verified",
+      "evidence": [
+        "单元测试覆盖Unicode、范围、脚注引用保护与marks保留；段落样式已有代码。"
+      ],
+      "remaining": [
+        "所有对话框路径与样式组合未全面浏览器验收。"
+      ],
+      "code": [
+        "src/editor-tools.mjs",
+        "tests/editor-tools.test.mjs"
+      ]
+    },
+    {
+      "id": "library",
+      "title": "本机工程库",
+      "implementation": "partial",
+      "local_acceptance": "passed_for_stated_cases",
+      "original_11_compatibility": "not_verified",
+      "evidence": [
+        "CUA实际保存工程快照，并重新读取列表。"
+      ],
+      "remaining": [
+        "没有据此声称全部工程恢复、数据库损坏迁移或跨浏览器同步通过。"
+      ],
+      "code": [
+        "src/workspace-tools.mjs"
+      ]
+    },
+    {
+      "id": "workspace",
+      "title": "书签、字符检查、符号与操作序列",
+      "implementation": "partial",
+      "local_acceptance": "passed_for_stated_cases",
+      "original_11_compatibility": "not_verified",
+      "evidence": [
+        "代码提供书签定位、Unicode字符检查、符号插入及受限文字操作序列；workspace单测覆盖转换、引用保护、字符信息和失效书签。",
+        "CUA创建书签、跳转定位、插入α并撤销通过。"
+      ],
+      "remaining": [
+        "不是任意宏执行、完整编码工具、繁简/排序或原版动态键盘；UI全路径未验收。"
+      ],
+      "code": [
+        "src/workspace-tools.mjs",
+        "tests/workspace-tools.test.mjs"
+      ]
+    },
+    {
+      "id": "assembly",
+      "title": "章节合并与版本比较",
+      "implementation": "partial",
+      "local_acceptance": "passed_for_stated_cases",
+      "original_11_compatibility": "not_verified",
+      "evidence": [
+        "测试覆盖块ID/注释/书签重映射、样式范围与比较不修改原稿；手工函数检查章节重编号后ruby偏移正确。",
+        "CUA相同工程比较0变化；插入同一章节后7块（含分页），导入完成。"
+      ],
+      "remaining": [
+        "章节沿用当前整书版式，未实现PRO/章级参数继承或协作；批量分散文字转换可能保守移除中间注音。"
+      ],
+      "code": [
+        "src/workspace-tools.mjs",
+        "src/ruby.mjs"
+      ]
+    },
+    {
+      "id": "vertical",
+      "title": "横竖排与多栏流式分页",
+      "implementation": "partial",
+      "local_acceptance": "passed_for_stated_cases",
+      "original_11_compatibility": "not_verified",
+      "evidence": [
+        "CUA双栏竖排样稿4页、8栏，已检查无overflow。",
+        "注音+合并表样稿切换竖排得到3页、2处ruby；逐栏scrollWidth/Height均等于clientWidth/Height，无溢出。表格横排保留有持续提示。"
+      ],
+      "remaining": [
+        "独立XeLaTeX后端拒绝竖排；中文竖排全部标点方向、混排、分区和对照语义未验证。"
+      ],
+      "code": [
+        "src/flow-layout.mjs",
+        "src/pagination.mjs",
+        "examples/vertical.shuye.json"
+      ]
+    },
+    {
+      "id": "flow",
+      "title": "图片绕排与流式内容完整性",
+      "implementation": "partial",
+      "local_acceptance": "passed_for_stated_cases",
+      "original_11_compatibility": "not_verified",
+      "evidence": [
+        "CUA flow-and-table样稿4页，1472个正文UTF-16单元拼接无缺；样稿包含左绕图和表格。"
+      ],
+      "remaining": [
+        "浏览器为有限左右绕排；竖排图片采用独立块；PDF绕排降为独立块并警告，无自由拖放浮动定位。"
+      ],
+      "code": [
+        "src/flow-layout.mjs",
+        "src/pagination.mjs",
+        "examples/flow-and-table.shuye.json"
+      ]
+    },
+    {
+      "id": "tables",
+      "title": "可视化合并表格与续表",
+      "implementation": "partial",
+      "local_acceptance": "passed_for_stated_cases",
+      "original_11_compatibility": "not_verified",
+      "evidence": [
+        "纯函数/DOM/DOCX测试覆盖越界重叠、原格内容保存、分组合并与列宽；CUA合并/拆分后内容保留。",
+        "此前综合样稿70数据行无缺重，7片重复表头；新合并组按整组分页。"
+      ],
+      "remaining": [
+        "超页合并组不支持拆单元格，只诊断；嵌套表、卧排、完整BG/BH和复杂单元格式未实现。"
+      ],
+      "code": [
+        "src/table-layout.mjs",
+        "src/table-editor.mjs",
+        "tests/table-layout.test.mjs",
+        "docx_import.py"
+      ]
+    },
+    {
+      "id": "ruby",
+      "title": "手工拼音/注音",
+      "implementation": "partial",
+      "local_acceptance": "passed_for_stated_cases",
+      "original_11_compatibility": "not_verified",
+      "evidence": [
+        "7项ruby单测覆盖UTF16、emoji/组合字素、重叠、编辑调整及DOM安全；CUA显示、添加与撤销通过。"
+      ],
+      "remaining": [
+        "非自动多音字处理，不兼容原PY/ZY/PX语义；带ruby块在纸面只选择，通过右侧编辑基文；触及注音基文可移除绑定。"
+      ],
+      "code": [
+        "src/ruby.mjs",
+        "ruby.css",
+        "tests/ruby.test.mjs"
+      ]
+    },
+    {
+      "id": "equations",
+      "title": "公式",
+      "implementation": "partial",
+      "local_acceptance": "passed_for_stated_cases",
+      "original_11_compatibility": "not_verified",
+      "evidence": [
+        "KaTeX样稿公式可见；Python覆盖受限数学输入及部分OMML转换。"
+      ],
+      "remaining": [
+        "非结构化视觉公式编辑器，不等于完整MathType/BD数学态兼容。"
+      ],
+      "code": [
+        "src/advanced-ui.mjs",
+        "docx_import.py",
+        "publishing.py"
+      ]
+    },
+    {
+      "id": "notes",
+      "title": "页下注与文末注",
+      "implementation": "partial",
+      "local_acceptance": "passed_for_stated_cases",
+      "original_11_compatibility": "not_verified",
+      "evidence": [
+        "综合样稿页下注可见；浏览器预留注释区域，PDF注释已有测试。"
+      ],
+      "remaining": [
+        "浏览器长注移文末，PDF重复引用星号；割注/边注及复杂跨页注未完整实现。"
+      ],
+      "code": [
+        "src/pagination.mjs",
+        "publishing.py"
+      ]
+    },
+    {
+      "id": "toc_index",
+      "title": "目录索引",
+      "implementation": "partial",
+      "local_acceptance": "passed_for_stated_cases",
+      "original_11_compatibility": "not_verified",
+      "evidence": [
+        "浏览器按自身分页迭代目录/词索引；独立PDF分别生成页码。"
+      ],
+      "remaining": [
+        "PDF索引只做块起始页近似，跨页表格及单元词语不保证收全；无XP/MD/MZ完整兼容、范围及交叉索引。"
+      ],
+      "code": [
+        "src/pagination.mjs",
+        "publishing.py"
+      ]
+    },
+    {
+      "id": "docx",
+      "title": "DOCX结构导入",
+      "implementation": "partial",
+      "local_acceptance": "passed_for_stated_cases",
+      "original_11_compatibility": "not_verified",
+      "evidence": [
+        "Python测试和Node调用的内存DOCX样例验证run样式、注释、OMML、gridSpan/vMerge及tblGrid列宽。"
+      ],
+      "remaining": [
+        "hMerge旧写法、复杂浮动、嵌套结构、完整页眉页脚、MathType/OLE不完整；降级内容需核对。"
+      ],
+      "code": [
+        "docx_import.py",
+        "tests/test_docx_v2.py",
+        "tests/table-layout.test.mjs"
+      ]
+    },
+    {
+      "id": "fbd",
+      "title": "FBD互操作子集",
+      "implementation": "partial",
+      "local_acceptance": "passed_for_stated_cases",
+      "original_11_compatibility": "not_verified",
+      "evidence": [
+        "测试覆盖HT marks、简单BT/SJ/整篇FL与GBK私用区控制符，未知注解保留。"
+      ],
+      "remaining": [
+        "无完整无损读写，不能写回FBD；FE/S10/S72/NPS未支持，PRO仅参数子集；语义依据含2008手册，缺11.0参考输出。"
+      ],
+      "code": [
+        "src/fbd.mjs",
+        "docs/fbd-support.md"
+      ]
+    },
+    {
+      "id": "pdf",
+      "title": "独立XeLaTeX PDF",
+      "implementation": "partial",
+      "local_acceptance": "passed_for_stated_cases",
+      "original_11_compatibility": "not_verified",
+      "evidence": [
+        "本轮注音+合并表样稿生成2页PDF；视觉复核修复后“甲组”正常。",
+        "此前综合稿浏览器8页、XeLaTeX9页，已观察到不同版。"
+      ],
+      "remaining": [
+        "竖排不支持，图片绕排退化；字体/行距/分页与浏览器不同；完整印前与方正同版未认证。"
+      ],
+      "code": [
+        "publishing.py",
+        "examples/ruby-and-table.shuye.json"
+      ]
+    },
+    {
+      "id": "imposition",
+      "title": "骑马订拼版与页范围",
+      "implementation": "partial",
+      "local_acceptance": "passed_for_stated_cases",
+      "original_11_compatibility": "not_verified",
+      "evidence": [
+        "本轮2页样稿补2空白后输出2个印刷面；代码提供页范围、左装订骑马订顺序、纸张适配与裁切标记。"
+      ],
+      "remaining": [
+        "未实物双面打样；无爬移补偿、任意折手或完整装订生产认证。"
+      ],
+      "code": [
+        "print_production.py",
+        "tests/test_print_production.py"
+      ]
+    },
+    {
+      "id": "preflight",
+      "title": "PDF有限预检与出血边界",
+      "implementation": "partial",
+      "local_acceptance": "passed_for_stated_cases",
+      "original_11_compatibility": "not_verified",
+      "evidence": [
+        "代码和Python测试覆盖页尺寸、字体嵌入检查、部分有效图像DPI、页框与裁切处理。"
+      ],
+      "remaining": [
+        "出血只利用已有图文及页框，不生成缺失像素；未完整预检透明度、叠印、专色、总墨量；拒绝PDF/X和CMYK转换宣称。"
+      ],
+      "code": [
+        "print_production.py",
+        "tests/test_print_production.py"
+      ]
+    },
+    {
+      "id": "thousand_pages",
+      "title": "千页手动分页完整性",
+      "implementation": "partial",
+      "local_acceptance": "passed_for_stated_cases",
+      "original_11_compatibility": "not_verified",
+      "evidence": [
+        "CUA千页样稿：1000页、1000个独特段落，顺序正确，已检查无overflow。"
+      ],
+      "remaining": [
+        "仅手动分页样稿；无耗时/峰值内存指标，不等于千页连续复杂流、复杂表注、长期编辑恢复及打印全部通过。"
+      ],
+      "code": [
+        "src/pagination.mjs"
+      ]
+    },
+    {
+      "id": "native_baseline",
+      "title": "原版11.0参照与逐页差分",
+      "implementation": "not_completed",
+      "local_acceptance": "not_verified",
+      "original_11_compatibility": "not_verified",
+      "evidence": [
+        "REA静态资源和手册调查提供线索，未获得匹配字体/参数的原版参考PDF基线。"
+      ],
+      "remaining": [
+        "需合法自有输入、原版11.0输出PDF、字体及版式参数，分别验收文件、注解语义和逐页几何；不得用新编辑器截图替代基线。"
+      ],
+      "code": [
+        "docs/research.md",
+        "docs/compatibility-matrix.md"
+      ]
+    },
+    {
+      "id": "remaining",
+      "title": "其他原版整项缺口",
+      "implementation": "not_implemented",
+      "local_acceptance": "not_verified",
+      "original_11_compatibility": "not_verified",
+      "evidence": [],
+      "remaining": [
+        "完整PRO/原版大样、复杂分区/对照/割注/边注、完整字库及花边底纹、网络组版、CEB、聪明码、专有二维条码、完整宏与专业印前标准。"
+      ],
+      "code": [
+        "docs/compatibility-matrix.md"
+      ]
+    },
+    {
+      "id": "pro",
+      "title": "PRO参数子集导入",
+      "implementation": "partial",
+      "local_acceptance": "passed_for_stated_cases",
+      "original_11_compatibility": "not_verified",
+      "evidence": [
+        "8项自动化用例含原文保存往返。只读验证9份本机PRO原文记录完整。CUA导入default.PRO、应用方向并下载工程，确认proSources保存38字符原文。"
+      ],
+      "remaining": [
+        "只映射BX方向及明确毫米尺寸；旧字号字体行距与其他注解保留不转换。超当前工程尺寸边界拒绝应用。SB仅清单，不自动读取文件。不是完整PRO兼容或PRO写回。"
+      ],
+      "code": [
+        "src/pro.mjs",
+        "src/pro-ui.mjs",
+        "tests/pro.test.mjs"
+      ]
+    }
+  ],
+  "next_acceptance_requirements": [
+    "补齐原版11.0同输入/同字体/同参数的参考PDF基线",
+    "将手动分页压力测试扩展到连续复杂流、表注、内存/耗时与持续编辑恢复",
+    "继续实现矩阵缺口并逐项增加正例、边界例与错误例",
+    "独立核验输出字体、颜色、印前规范和实物双面打样，不以预检工具运行替代认证"
+  ]
+}

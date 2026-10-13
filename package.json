@@ -1,0 +1,12 @@
+{
+  "name": "open-typesetter",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Local-first visual Chinese book typesetter",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "start": "python server.py"
+  }
+}

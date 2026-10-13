@@ -1,0 +1,4 @@
+# Optional: PDF preflight/imposition and WebP conversion.
+# Basic editing and DOCX import use only Python's standard library.
+pypdf>=6.9.1,<7
+Pillow>=11,<13

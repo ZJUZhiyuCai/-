@@ -1,0 +1,15 @@
+__pycache__/
+node_modules/
+.research/
+output/
+*.log
+.DS_Store
+tmp/
+.venv/
+venv/
+*.py[cod]
+*.zip
+.env
+.env.*
+!.env.example
+scripts/finalize-acceptance.py

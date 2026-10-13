@@ -1,0 +1,145 @@
+{
+  "format": "open-typesetter",
+  "version": 1,
+  "title": "书页使用指南",
+  "layout": {
+    "width": 185,
+    "height": 260,
+    "top": 24,
+    "bottom": 22,
+    "inner": 24,
+    "outer": 20,
+    "fontSize": 11,
+    "lineHeight": 1.8,
+    "columns": 1,
+    "gap": 8,
+    "indent": 2,
+    "header": "书页 · 开源排版",
+    "pageStart": 1
+  },
+  "blocks": [
+    {
+      "id": "5e093186-3a11-4cd4-a12f-4b6f76c15ab3",
+      "type": "heading",
+      "text": "让文字，落在恰好的位置",
+      "align": "left",
+      "fontFamily": "serif",
+      "fontSize": 23,
+      "bold": false
+    },
+    {
+      "id": "94bb5426-ddc2-46c7-b322-aed02142feb9",
+      "type": "paragraph",
+      "text": "书页是一款在本机运行的开源排版编辑器。单击纸面上的文字，即可开始编辑；右侧的版式参数决定文字如何流向每一页。你可以先修改这篇示例，再导入自己的稿件。",
+      "align": "justify",
+      "fontFamily": "serif",
+      "bold": false
+    },
+    {
+      "id": "ef45f9bf-dcfb-412c-ab11-8acd4d18288b",
+      "type": "heading",
+      "text": "从文稿到书页",
+      "align": "left",
+      "fontFamily": "serif",
+      "fontSize": 15,
+      "bold": false
+    },
+    {
+      "id": "ec02bd3f-4841-48cf-a0e6-7672eeab6050",
+      "type": "paragraph",
+      "text": "好的版面始于秩序。开本决定一本书的尺度，版心留出阅读的呼吸，行距与字号则共同构成文字的节奏。它们不是彼此孤立的选项：调整其中一项，全文都会重新分页。",
+      "align": "justify",
+      "fontFamily": "serif",
+      "bold": false
+    },
+    {
+      "id": "e0bb2154-d8e1-4bfc-a70d-420846b692e4",
+      "type": "paragraph",
+      "text": "在左侧选择一个段落，右侧便会显示它的内容与样式。你可以把它变成小标题，改变字体与对齐方式，或在适当的位置插入分页符。修改会保存在当前浏览器；将工程保存到文件，可以在下次继续编辑。",
+      "align": "justify",
+      "fontFamily": "serif",
+      "bold": false
+    },
+    {
+      "id": "6b93f766-531c-48f0-8e8c-eae3c7585801",
+      "type": "heading",
+      "text": "为中文阅读而设计",
+      "align": "left",
+      "fontFamily": "serif",
+      "fontSize": 15,
+      "bold": false
+    },
+    {
+      "id": "d64ca85b-6eb6-4ab0-9ccd-754e10d457e1",
+      "type": "paragraph",
+      "text": "正文默认首行缩进两字，采用系统宋体显示。书页使用浏览器实际测量文字的高度，再将长段落分配到后续页面。分栏、页眉、页码与对开页边距，都可以在版面中即时查看。",
+      "align": "justify",
+      "fontFamily": "serif",
+      "bold": false
+    },
+    {
+      "id": "9334c95b-167f-4d7c-bf6e-99421eaba160",
+      "type": "paragraph",
+      "text": "纸张上的留白也参与叙事。天头、地脚、内侧与外侧的空间，使读者能够辨认章节的边界，并在连续阅读中保持方向。设计版面时，不妨先确定适合内容的阅读密度，再微调每一处细节。",
+      "align": "justify",
+      "fontFamily": "serif",
+      "bold": false
+    },
+    {
+      "id": "f75351f7-8088-4e07-8b5f-5d17d12f3138",
+      "type": "paragraph",
+      "text": "可视化不应该让内容失去结构。这里的标题、正文、图片和分页符分别保存，页面只是它们在当前版式下的呈现。改变开本之后，文字仍然完整，段落也仍然保持原有顺序。",
+      "align": "justify",
+      "fontFamily": "serif",
+      "bold": false
+    },
+    {
+      "id": "6cc0a8c9-ad9c-494c-ab00-69d5341d12b4",
+      "type": "paragraph",
+      "text": "校对时，可以在纸面上直接改字，也可以使用右侧的段落编辑框。完成一个段落后，点击页面外重新分页。保存工程保留可编辑内容；打印时请选择相同的纸张尺寸，并关闭浏览器附加的页眉页脚。",
+      "align": "justify",
+      "fontFamily": "serif",
+      "bold": false
+    },
+    {
+      "id": "c8a35973-5999-4ec1-bf08-edc95d4ac3d5",
+      "type": "paragraph",
+      "text": "纸张上的留白也参与叙事。天头、地脚、内侧与外侧的空间，使读者能够辨认章节的边界，并在连续阅读中保持方向。设计版面时，不妨先确定适合内容的阅读密度，再微调每一处细节。",
+      "align": "justify",
+      "fontFamily": "serif",
+      "bold": false
+    },
+    {
+      "id": "eac3914b-3f0b-4b0e-b36c-f8be8c6dfd4a",
+      "type": "paragraph",
+      "text": "可视化不应该让内容失去结构。这里的标题、正文、图片和分页符分别保存，页面只是它们在当前版式下的呈现。改变开本之后，文字仍然完整，段落也仍然保持原有顺序。",
+      "align": "justify",
+      "fontFamily": "serif",
+      "bold": false
+    },
+    {
+      "id": "d8bba4d2-a745-4d69-9755-ebe2a4fa56e9",
+      "type": "paragraph",
+      "text": "校对时，可以在纸面上直接改字，也可以使用右侧的段落编辑框。完成一个段落后，点击页面外重新分页。保存工程保留可编辑内容；打印时请选择相同的纸张尺寸，并关闭浏览器附加的页眉页脚。",
+      "align": "justify",
+      "fontFamily": "serif",
+      "bold": false
+    },
+    {
+      "id": "06195b27-08fc-46cf-9d86-6faba077d232",
+      "type": "paragraph",
+      "text": "纸张上的留白也参与叙事。天头、地脚、内侧与外侧的空间，使读者能够辨认章节的边界，并在连续阅读中保持方向。设计版面时，不妨先确定适合内容的阅读密度，再微调每一处细节。",
+      "align": "justify",
+      "fontFamily": "serif",
+      "bold": false
+    },
+    {
+      "id": "3036c7c3-fcd7-4cc2-9afb-6a159d09bcd8",
+      "type": "paragraph",
+      "text": "可视化不应该让内容失去结构。这里的标题、正文、图片和分页符分别保存，页面只是它们在当前版式下的呈现。改变开本之后，文字仍然完整，段落也仍然保持原有顺序。",
+      "align": "justify",
+      "fontFamily": "serif",
+      "bold": false
+    }
+  ]
+}
