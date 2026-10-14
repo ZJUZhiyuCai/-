@@ -10,7 +10,7 @@ destination.parent.mkdir(parents=True, exist_ok=True)
 files = [p for p in root.iterdir() if p.is_file() and p.suffix in {'.py', '.mjs', '.html', '.css', '.json', '.cmd', '.md', '.txt'}]
 files.append(root / 'LICENSE')
 files.append(root / '.gitignore')
-for folder in ['src', 'tests', 'examples', 'vendor', 'docs', 'scripts', '.github']:
+for folder in ['src', 'tests', 'examples', 'vendor', 'docs', 'scripts', '.github', 'mcp']:
     files += [p for p in (root / folder).rglob('*') if p.is_file() and '__pycache__' not in p.parts and p.suffix != '.pyc' and p.name != 'finalize-acceptance.py']
 for name in ['ruby-and-table.pdf', 'ruby-and-table-booklet.pdf', 'production-report.json']:
     proof = root / 'output/pdf' / name

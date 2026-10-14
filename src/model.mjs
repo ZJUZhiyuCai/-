@@ -61,6 +61,8 @@ export function validateDocument(raw) {
     throw Error("页边距过大，每栏至少需要宽 20 mm、版心高 60 mm。");
   layout.header = String(raw.layout?.header ?? defaults.header).slice(0, 200);
   layout.headerEven = String(raw.layout?.headerEven ?? layout.header).slice(0, 200);
+  layout.footer = String(raw.layout?.footer ?? '{page}').slice(0,200);
+  layout.footerEven = String(raw.layout?.footerEven ?? layout.footer).slice(0,200);
   layout.notesMode = raw.layout?.notesMode === 'endnote' ? 'endnote' : 'footnote';
   if(raw.layout?.writingMode!==undefined&&!['horizontal-tb','vertical-rl'].includes(raw.layout.writingMode))throw Error('文字方向无效。');
   layout.writingMode = raw.layout?.writingMode || 'horizontal-tb';
@@ -148,7 +150,17 @@ export function validateDocument(raw) {
     styles: Array.isArray(raw.styles) ? raw.styles.slice(0,100).map(s=>({name:String(s.name||'未命名样式').slice(0,80),type:s.type==='heading'?'heading':'paragraph',fontFamily:['serif','sans','kai'].includes(s.fontFamily)?s.fontFamily:'serif',fontSize:Number.isFinite(s.fontSize)?Math.max(5,Math.min(72,s.fontSize)):11,align:['left','center','right','justify'].includes(s.align)?s.align:'justify',bold:!!s.bold,indent:Number.isFinite(s.indent)?Math.max(0,Math.min(20,s.indent)):2,level:Number.isInteger(s.level)?Math.max(1,Math.min(4,s.level)):1})) : [],
     bookmarks: Array.isArray(raw.bookmarks)?raw.bookmarks.slice(0,1000).filter(b=>b&&blocks.some(x=>x.id===b.blockId)).map(b=>({name:String(b.name||'书签').slice(0,80),blockId:b.blockId})):[],
     proSources: validateProSources(raw.proSources),
+    bibliography: validateRecords(raw.bibliography,'参考文献',30000),
+    comments: validateRecords(raw.comments,'审阅批注',30000).map(c=>{
+      if(!blocks.some(b=>b.id===c.blockId))throw Error('批注指向不存在的组件。');
+      return {...c,blockId:c.blockId,resolved:!!c.resolved};
+    }),
   };
+}
+function validateRecords(raw,label,max) {
+  if(raw===undefined)return [];
+  if(!Array.isArray(raw)||raw.length>10000)throw Error(label+'数据无效。');
+  const ids=new Set();return raw.map(r=>{if(!r||!/^[-\w]{1,80}$/.test(r.id)||ids.has(r.id)||typeof r.text!=='string'||r.text.length>max)throw Error(label+' ID或内容无效。');ids.add(r.id);return label==='审阅批注'?{id:r.id,text:r.text,blockId:r.blockId,resolved:!!r.resolved}:{id:r.id,text:r.text};});
 }
 function validateProSources(raw) {
   if(raw===undefined)return [];

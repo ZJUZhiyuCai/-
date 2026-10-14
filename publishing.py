@@ -127,12 +127,13 @@ def build_tex(doc,assets_dir):
 \clubpenalty=10000
 \widowpenalty=10000
 \pagestyle{fancy}\fancyhf{}
-\fancyfoot[LE,RO]{\thepage}
 \renewcommand{\headrulewidth}{0.3pt}
 \setlength{\headheight}{18pt}
 '''
     pre+=r'\geometry{paperwidth='+str(values['width'])+'mm,paperheight='+str(values['height'])+'mm,top='+str(values['top'])+'mm,bottom='+str(values['bottom'])+'mm,inner='+str(values['inner'])+'mm,outer='+str(values['outer'])+'mm}\n'
     pre+=r'\fancyhead[LE]{'+escape(layout.get('headerEven',layout.get('header','')))+r'}\fancyhead[RO]{'+escape(layout.get('headerOdd',layout.get('header','')))+'}\n'
+    footer=lambda s: r'\thepage{}'.join(escape(part) for part in str(s).split('{page}'))
+    pre+=r'\fancyfoot[LE]{'+footer(layout.get('footerEven',layout.get('footer','{page}')))+r'}\fancyfoot[RO]{'+footer(layout.get('footer','{page}'))+'}\n'
     pre+=r'\setlength{\columnsep}{'+str(values['gap'])+'mm}\n'+r'\setlength{\parindent}{'+str(values['indent'])+'em}\n'
     pre+=r'\begin{document}\setcounter{page}{'+str(int(values['pageStart']))+'}\n'+r'\fontsize{'+str(values['fontSize'])+'}{'+str(values['fontSize']*values['lineHeight'])+r'}\selectfont'+'\n'
     content=[]; incols=False

@@ -13,3 +13,5 @@ venv/
 .env.*
 !.env.example
 scripts/finalize-acceptance.py
+.npm-cache/
+.shuye-mcp/

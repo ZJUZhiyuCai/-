@@ -1,3 +1,4 @@
+import {materializeReferences} from './references.mjs';
 export function setupProduction({getDoc,status}){
   const dialog=document.createElement('dialog');dialog.className='workspace-dialog';document.body.append(dialog);
   const open=document.createElement('button');open.textContent='出版输出';document.querySelector('.file-actions').append(open);
@@ -21,7 +22,7 @@ export function setupProduction({getDoc,status}){
       const options={pages:pages.value,booklet:booklet.checked,bleedMm:Number(bleed.value),cropMarks:crop.checked,minDpi:Number(dpi.value)};
       if(width.value)options.sheetWidthMm=Number(width.value);if(height.value)options.sheetHeightMm=Number(height.value);
       const request={options};
-      if(source.value==='doc')request.doc=getDoc();else{const f=file.files[0];if(!f)throw Error('请先选择 PDF。');if(f.size>14*1024*1024)throw Error('当前入口单个 PDF 限 14 MB。');request.pdf=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result.split(',')[1]);r.onerror=()=>reject(Error('PDF 读取失败'));r.readAsDataURL(f);});}
+      if(source.value==='doc')request.doc=materializeReferences(getDoc());else{const f=file.files[0];if(!f)throw Error('请先选择 PDF。');if(f.size>14*1024*1024)throw Error('当前入口单个 PDF 限 14 MB。');request.pdf=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result.split(',')[1]);r.onerror=()=>reject(Error('PDF 读取失败'));r.readAsDataURL(f);});}
       report.textContent='正在排版与预检…';status('正在生成出版输出…');
       const response=await fetch('/api/production',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request)}),result=await response.json();if(!response.ok)throw Error(result.error||'出版输出失败');
       report.textContent=JSON.stringify(result.report,null,2);

@@ -7,6 +7,8 @@ import argparse
 import json
 import base64
 import binascii
+import subprocess
+import os
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
@@ -33,6 +35,7 @@ class Handler(SimpleHTTPRequestHandler):
         allowed = {'/','/index.html','/style.css','/flow-layout.css','/table-editor.css','/workspace-tools.css','/src/app.mjs','/src/model.mjs','/src/pagination.mjs','/src/fbd.mjs','/src/advanced-ui.mjs','/src/editor-tools.mjs','/src/flow-layout.mjs','/src/table-layout.mjs','/src/table-editor.mjs','/src/workspace-tools.mjs','/src/production-ui.mjs','/src/pro.mjs','/src/pro-ui.mjs'}
         vendor = (ROOT / unquote(route).lstrip('/')).resolve()
         allowed.update({'/ruby.css','/src/ruby.mjs'})
+        allowed.update({'/src/references.mjs','/src/mcp-ui.mjs','/src/project-sync.mjs'})
         vendor_ok = route.startswith('/vendor/katex/') and vendor.is_relative_to((ROOT/'vendor/katex').resolve()) and vendor.is_file()
         if route not in allowed and not vendor_ok:
             self.send_error(404); return
@@ -52,13 +55,22 @@ class Handler(SimpleHTTPRequestHandler):
         origin = self.headers.get('Origin')
         if origin and origin not in {f'http://127.0.0.1:{self.server.server_port}',f'http://localhost:{self.server.server_port}'}:
             self.send_error(403); return
-        if self.path not in {'/api/import-docx','/api/export-pdf','/api/production'}:
+        if self.path not in {'/api/import-docx','/api/export-pdf','/api/production','/api/mcp-projects'}:
             self.send_error(404); return
         try:
             length = int(self.headers.get('Content-Length','0'))
             if not 0 < length <= MAX_UPLOAD:
                 raise ValueError('文件大小必须在 1 字节至 20 MB 之间。')
             data = self.rfile.read(length)
+            if self.path == '/api/mcp-projects':
+                env = dict(os.environ)
+                env.setdefault('SHUYE_PYTHON', __import__('sys').executable)
+                run = subprocess.run(['node',str(ROOT/'mcp/bridge.mjs')],input=data,capture_output=True,timeout=30,env=env,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+                if not run.stdout:
+                    raise ValueError('请先安装 Node.js 22+ 并在项目目录执行 npm ci。')
+                result=json.loads(run.stdout)
+                payload=json.dumps(result,ensure_ascii=False).encode('utf-8')
+                self.send_response(400 if run.returncode else 200);self.send_header('Content-Type','application/json; charset=utf-8');self.send_header('Content-Length',str(len(payload)));self.end_headers();self.wfile.write(payload);return
             if self.path == '/api/production':
                 from print_production import process_pdf
                 request = json.loads(data)
@@ -89,7 +101,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return
             result = import_docx(data)
             code = 200
-        except (ValueError, BadZipFile, KeyError, ET.ParseError, RuntimeError, NotImplementedError, TypeError, AttributeError, OSError, ImportError, binascii.Error) as e:
+        except (ValueError, BadZipFile, KeyError, ET.ParseError, RuntimeError, NotImplementedError, TypeError, AttributeError, OSError, ImportError, binascii.Error, subprocess.TimeoutExpired) as e:
             result = {'error':f'处理失败：{e}'}
             code = 400
         payload = json.dumps(result, ensure_ascii=False).encode('utf-8')

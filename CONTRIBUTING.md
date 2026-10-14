@@ -11,6 +11,7 @@ python -m venv .venv
 # Windows: .venv\Scripts\activate
 # macOS / Linux: source .venv/bin/activate
 python -m pip install -r requirements.txt
+npm ci
 python server.py
 ```
 

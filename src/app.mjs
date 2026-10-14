@@ -17,6 +17,8 @@ import { setupTableEditor } from './table-editor.mjs';
 import { applyFlowColumn } from './flow-layout.mjs';
 import { setupProduction } from './production-ui.mjs';
 import { setupRubyEditor } from './ruby.mjs';
+import {materializeReferences} from './references.mjs';
+import {setupMcpProjects} from './mcp-ui.mjs';
 const $ = (id) => document.getElementById(id),
   storageKey = "open-typesetter-v1",
   history = new History();
@@ -175,14 +177,14 @@ async function render() {
   await document.fonts.load('16px KaTeX_Main').catch(()=>{});
   await document.fonts.load('16px KaTeX_Math').catch(()=>{});
   if (version !== renderVersion || document.activeElement?.matches('.block[contenteditable]')) return;
-  const result = paginate(doc, $("measure"));
+  const viewDoc=materializeReferences(doc),result = paginate(viewDoc, $("measure"));
   let diagnostic=document.getElementById('layoutWarnings');
   if(!diagnostic){diagnostic=document.createElement('details');diagnostic.id='layoutWarnings';diagnostic.className='layout-warnings';$('pages').before(diagnostic);}
   diagnostic.replaceChildren();diagnostic.hidden=!result.warnings.length;
   if(result.warnings.length){const summary=document.createElement('summary');summary.textContent=`排版提示（${result.warnings.length} 项）`;diagnostic.append(summary);for(const message of result.warnings){const p=document.createElement('p');p.textContent=message;diagnostic.append(p);}}
   lastPages = result.pages;
   const fragment = document.createDocumentFragment(),
-    l = {...doc.layout,_notes:doc.notes||[]};
+    l = {...doc.layout,_notes:viewDoc.notes||[]};
   const mm = 96 / 25.4;
   result.pages.forEach((columns, index) => {
     const wrap = document.createElement("div");
@@ -292,7 +294,7 @@ async function render() {
     });
     const footer = document.createElement("div");
     footer.className = "paper-footer";
-    footer.textContent = index + l.pageStart;
+    footer.textContent = ((index+l.pageStart)%2===0?l.footerEven:l.footer).replaceAll('{page}',String(index+l.pageStart));
     page.append(header, body, footer);
     if(result.pageNotes[index]?.length){const notes=notesElement(result.pageNotes[index],l);Object.assign(notes.style,{left:`${left}mm`,bottom:`${l.bottom}mm`,width:`${l.width-l.inner-l.outer}mm`});page.append(notes);}
     wrap.append(page);
@@ -377,7 +379,7 @@ document
     el.addEventListener("change", () =>
       validatedLayout({
         [el.dataset.layout]:
-          ['header','headerEven','notesMode','writingMode'].includes(el.dataset.layout) ? el.value : Number(el.value),
+          ['header','headerEven','footer','footerEven','notesMode','writingMode'].includes(el.dataset.layout) ? el.value : Number(el.value),
       }),
     ),
   );
@@ -490,6 +492,7 @@ $("deleteBlock").onclick = () => {
   change(() => {
     const index = doc.blocks.findIndex((b) => b.id === selected);
     doc.blocks.splice(index, 1);
+    doc.comments=doc.comments.filter(c=>c.blockId!==selected);
     selected = doc.blocks[Math.min(index, doc.blocks.length - 1)]?.id;
   });
 };
@@ -664,6 +667,7 @@ setupEditorTools({getDoc:()=>doc,getSelected:()=>selected,change,select:choose,s
 setupTableEditor({getDoc:()=>doc,getSelected:()=>selected,change,status});
 setupWorkspaceTools({getDoc:()=>doc,getSelected:()=>selected,change,select:choose,status,getSelectionRange:()=>selectionRange,replaceDoc:next=>change(()=>{doc=next;selected=doc.blocks[0]?.id;})});
 setupProImport({getDoc:()=>doc,status,replaceDoc:next=>change(()=>{doc=next;})});
+setupMcpProjects({getDoc:()=>doc,status,replaceDoc:next=>change(()=>{doc=next;selected=doc.blocks[0]?.id;})});
 setupProduction({getDoc:()=>doc,status});
 setupRubyEditor({getDoc:()=>doc,getSelected:()=>selected,getSelectionRange:()=>selectionRange,change,status});
 await refresh();

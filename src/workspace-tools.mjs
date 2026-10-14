@@ -33,22 +33,26 @@ export function compareDocuments(before,after){
   const commonBefore=before.blocks.map(b=>b.id).filter(id=>current.has(id)),commonAfter=after.blocks.map(b=>b.id).filter(id=>old.has(id));
   if(JSON.stringify(commonBefore)!==JSON.stringify(commonAfter))changes.push({kind:'顺序变化',id:'',before:commonBefore.join(', '),after:commonAfter.join(', ')});
   if(JSON.stringify(before.notes)!==JSON.stringify(after.notes))changes.push({kind:'注释变化',id:'',before:JSON.stringify(before.notes),after:JSON.stringify(after.notes)});
+  for(const key of ['comments','bibliography'])if(JSON.stringify(before[key])!==JSON.stringify(after[key]))changes.push({kind:key==='comments'?'批注变化':'参考文献变化',id:'',before:JSON.stringify(before[key]),after:JSON.stringify(after[key])});
   return changes;
 }
 export function assembleBook(doc,chapters){
   const next=structuredClone(validateDocument(doc)),warnings=[];
   for(const raw of chapters){
-    const chapter=validateDocument(raw),ids=new Map(),noteIds=new Map();
+    const chapter=validateDocument(raw),ids=new Map(),noteIds=new Map(),bibIds=new Map();
     for(const b of chapter.blocks)ids.set(b.id,uid());
     for(const n of chapter.notes)noteIds.set(n.id,'n'+uid().replaceAll('-',''));
-    const remap=text=>text.replace(/\[\^([-\w]+)\]/g,(s,id)=>noteIds.has(id)?`[^${noteIds.get(id)}]`:s);
+    for(const n of chapter.bibliography)bibIds.set(n.id,'b'+uid().replaceAll('-',''));
+    const remap=text=>text.replace(/\[\^([-\w]+)\]/g,(s,id)=>noteIds.has(id)?`[^${noteIds.get(id)}]`:s).replace(/\[\[(ref|cite):([-\w]+)\]\]/g,(s,k,id)=>{const map=k==='ref'?ids:bibIds;return map.has(id)?`[[${k}:${map.get(id)}]]`:s;});
     if(next.blocks.length)next.blocks.push({id:uid(),type:'pageBreak',text:''});
     for(const b of chapter.blocks){
       // Update ranges one token at a time so imported character styles keep their positions.
-      for(const m of [...b.text.matchAll(/\[\^([-\w]+)\]/g)].reverse())if(noteIds.has(m[1]))replaceBlockText(b,b.text.slice(0,m.index)+`[^${noteIds.get(m[1])}]`+b.text.slice(m.index+m[0].length));
+      for(const m of [...b.text.matchAll(/\[\^([-\w]+)\]|\[\[(ref|cite):([-\w]+)\]\]/g)].reverse())replaceBlockText(b,b.text.slice(0,m.index)+remap(m[0])+b.text.slice(m.index+m[0].length));
       b.id=ids.get(b.id);if(b.rows)b.rows=b.rows.map(r=>r.map(remap));next.blocks.push(b);
     }
-    next.notes.push(...chapter.notes.map(n=>({...n,id:noteIds.get(n.id)})));
+    next.notes.push(...chapter.notes.map(n=>({...n,id:noteIds.get(n.id),text:remap(n.text)})));
+    next.bibliography.push(...chapter.bibliography.map(n=>({...n,id:bibIds.get(n.id)})));
+    next.comments.push(...chapter.comments.map(c=>({...c,id:uid(),blockId:ids.get(c.blockId)})));
     next.proSources.push(...chapter.proSources);
     next.bookmarks.push(...chapter.bookmarks.map(b=>({...b,blockId:ids.get(b.blockId)})));
     next.indexTerms=[...new Set([...next.indexTerms,...chapter.indexTerms])];

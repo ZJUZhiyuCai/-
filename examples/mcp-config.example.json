@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "shuye": {
+      "command": "node",
+      "args": ["C:/tools/open-typesetter/mcp/server.mjs", "--workspace", "C:/books/shuye-workspace"],
+      "env": {"SHUYE_PYTHON": "python"}
+    }
+  }
+}
