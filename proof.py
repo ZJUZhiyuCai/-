@@ -6,6 +6,7 @@ An incomplete check never becomes a production approval.
 from io import BytesIO
 import hashlib
 import json
+from journal import final_positions,relation_report
 
 
 def text_geometry(pdf_bytes, max_characters=2_000_000):
@@ -53,12 +54,22 @@ def inspect_output(output, document=None, compilation=None):
     report['pdfSha256']=hashlib.sha256(output['pdf']).hexdigest()
     report['geometry']=text_geometry(output['pdf'])
     report['layoutWarnings']=compilation.get('warnings',[])
+    report['compileMessages']=compilation.get('compileMessages',[])
+    report['discardedLayoutTrials']=compilation.get('discardedLayoutTrials',[])
     report['renderer']={k:compilation[k] for k in ('engine','engineVersion','fontSet') if k in compilation}
     if document:
         canonical=json.dumps(document,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')
         report['renderedDocumentSha256']=hashlib.sha256(canonical).hexdigest()
     diagnostics=[dict(d,sourceSha256=r['sourceSha256']) for r in document.get('importReports',[]) for d in r['diagnostics']]
     diagnostics.extend(report['geometry']['outside'])
+    diagnostics.extend(report.get('semanticLayout',{}).get('diagnostics',[]))
+    for b in document.get('blocks',[]):
+        for m in ([b] if b.get('type')=='equation' else b.get('inlineMath',[])):
+            if 'sourceOmml' in m and hashlib.sha256(m['sourceOmml'].encode('utf-8')).hexdigest()!=m.get('sourceSha256'):
+                diagnostics.append({'code':'OMML_SOURCE_HASH_MISMATCH','severity':'error','message':'原始公式来源摘要不一致','blockId':b.get('id'),'formulaId':m.get('id')})
+    if document.get('journal'):
+        required=['title-zh','authors-zh','affiliation-zh','abstract-zh','keywords-zh','title-en','authors-en','affiliation-en','abstract-en','keywords-en']
+        diagnostics.extend({'code':'JOURNAL_FIELD_MISSING','severity':'error','message':'首面缺少字段：'+role} for role in required if not any(b.get('role')==role and str(b.get('text','')).strip() for b in document.get('blocks',[])))
     for warning in report['layoutWarnings']:
         if any(s in warning for s in ('缺字','字体形状替代','超出版心','超过一页','高于版心','缺少脚注')):
             diagnostics.append({'code':'TEX_LAYOUT_ERROR','severity':'error','message':warning})
@@ -69,14 +80,17 @@ def inspect_output(output, document=None, compilation=None):
             diagnostics.append({'code':'IMAGE_DPI_LOW_OR_UNKNOWN','severity':'error','message':'图像有效 DPI 不足或无法测量','page':image['page']})
     report['quality']={'status':'BLOCKED' if any(d['severity']=='error' for d in diagnostics) else 'INCOMPLETE',
                        'productionReady':False,'diagnostics':diagnostics,
-                       'notChecked':['稿件逐项内容及公式语义验收','图形墨迹边界、遮挡与对象锚定','标题孤行、双栏/续表视觉验收',
+                       'notChecked':['稿件逐项内容及公式语义验收','图形墨迹边界、遮挡与正文首次引文对应关系','标题孤行、双栏/续表视觉验收',
                                      '字体使用许可与完整环境锁定','PDF/X、输出色彩配置、叠印、透明度、总墨量','指定印厂接收与编辑签字']}
     if report['geometry']['status']!='COMPLETE':report['quality']['notChecked'].append('完整 PDF 文字几何检查')
     return output
 
 
-def render_proof(document, options=None):
+def render_proof(document, options=None, evidence_dir=None):
     from publishing import render_pdf
     from print_production import process_pdf
-    compilation=render_pdf(document)
-    return inspect_output(process_pdf(compilation['pdf'],{'minDpi':300,**(options or {})}),document,compilation)
+    compilation=render_pdf(document,evidence_dir=evidence_dir)
+    output=process_pdf(compilation['pdf'],{'minDpi':300,**(options or {})})
+    objects=final_positions(compilation.get('objectPositions',{}),compilation['pdf'],output['pdf'],output['report'])
+    output['report']['semanticLayout']=relation_report(document,objects,compilation.get('objectPositions',{}))
+    return inspect_output(output,document,compilation)

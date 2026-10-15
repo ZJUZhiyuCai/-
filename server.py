@@ -37,7 +37,7 @@ class Handler(SimpleHTTPRequestHandler):
         vendor = (ROOT / unquote(route).lstrip('/')).resolve()
         allowed.update({'/src/integrity.mjs','/src/proof-ui.mjs','/ruby.css','/src/ruby.mjs'})
         allowed.update({'/src/references.mjs','/src/mcp-ui.mjs','/src/project-sync.mjs'})
-        allowed.update({'/node_modules/pdfjs-dist/build/pdf.mjs','/node_modules/pdfjs-dist/build/pdf.worker.mjs'})
+        allowed.update({'/src/journal.mjs','/src/journal-ui.mjs','/node_modules/pdfjs-dist/build/pdf.mjs','/node_modules/pdfjs-dist/build/pdf.worker.mjs'})
         vendor_ok = route.startswith('/vendor/katex/') and vendor.is_relative_to((ROOT/'vendor/katex').resolve()) and vendor.is_file()
         for directory in ('cmaps','standard_fonts','wasm'):
             prefix='/node_modules/pdfjs-dist/'+directory+'/'
@@ -84,7 +84,7 @@ class Handler(SimpleHTTPRequestHandler):
                 if not isinstance(request,dict): raise ValueError('出版请求格式无效。')
                 if 'doc' in request:
                     doc=request['doc']
-                    if not isinstance(doc,dict) or doc.get('format')!='open-typesetter' or doc.get('version') not in (1,2,3): raise ValueError('工程格式无效。')
+                    if not isinstance(doc,dict) or doc.get('format')!='open-typesetter' or doc.get('version') not in (1,2,3,4): raise ValueError('工程格式无效。')
                     production=render_proof(doc,request.get('options',{}))
                 elif isinstance(request.get('pdf'),str):
                     production=inspect_output(process_pdf(base64.b64decode(request['pdf'],validate=True),request.get('options',{})))
@@ -93,7 +93,7 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_response(200);self.send_header('Content-Type','application/json; charset=utf-8');self.send_header('Content-Length',str(len(payload)));self.end_headers();self.wfile.write(payload);return
             if self.path == '/api/export-pdf':
                 doc = json.loads(data)
-                if not isinstance(doc,dict) or doc.get('format')!='open-typesetter' or doc.get('version') not in (1,2,3):
+                if not isinstance(doc,dict) or doc.get('format')!='open-typesetter' or doc.get('version') not in (1,2,3,4):
                     raise ValueError('工程格式无效。')
                 result = render_pdf(doc)
                 payload = result['pdf']

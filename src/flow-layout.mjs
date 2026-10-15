@@ -115,7 +115,7 @@ export function paginateFlow(doc,measure,entries,renderBlock) {
   function rowsText(b,rows){return rows.map(i=>b.rows[i].join(' ')).join('\n');}
   let blocks=doc.blocks.map(b=>['toc','index'].includes(b.type)?{...b,_entries:entries[b.id]||[]}:b);
   if(l._notes.length){
-    blocks=[...blocks,{id:'_flow-notes-title',type:'heading',text:'注释',level:1,_generated:true},...l._notes.map((n,i)=>({id:`_flow-note-${n.id}`,type:'paragraph',text:`${i+1}　${n.text}`,indent:0,_generated:true}))];
+    blocks=[...blocks,{id:'_flow-notes-title',type:'heading',text:'注释',level:1,_generated:true},...l._notes.map((n,i)=>({id:`_flow-note-${n.id}`,type:'paragraph',text:`${n.marker??i+1}　${n.text}`,indent:0,_generated:true}))];
     if(l.notesMode!=='endnote')warnings.push('竖排或图片绕排使用文末注释；本轮不支持该组合的页底脚注。');
   }
   if(vertical&&blocks.some(b=>b.type==='image'&&b.wrap!=='none'&&b.wrap))warnings.push('竖排暂不支持图片左右绕排，图片已按独占块显示。');

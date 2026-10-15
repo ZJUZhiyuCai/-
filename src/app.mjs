@@ -302,7 +302,8 @@ async function render() {
   });
   $("pages").replaceChildren(fragment);
   $("paperMeta").textContent =
-    `${l.width} × ${l.height} mm　${l.columns} 栏　${result.pages.length} 页`;
+    `${l.width} × ${l.height} mm　${l.columns} 栏　${result.pages.length} 页${doc.journal ? '（结构编辑预览）' : ''}`;
+  $("paperMeta").nextElementSibling.textContent = doc.journal ? '期刊首面、锚点与分页请查看「最终 PDF 校样」' : '单击纸面即可编辑';
   $("stats").textContent =
     `${doc.blocks.reduce((n, b) => n + Array.from(b.text).length + (b.rows||[]).flat().reduce((s,t)=>s+Array.from(t).length,0), 0).toLocaleString()} 字符　/　${result.pages.length} 页`;
   let css = $("printStyle");

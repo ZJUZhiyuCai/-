@@ -1,3 +1,4 @@
+import {journalBlockFields,validateJournal,validateRelations} from './journal.mjs';
 import {validateInlineMath,validateImportReports} from './integrity.mjs';
 import { validateTable } from './table-layout.mjs';
 import { validateRuby,adjustRubyOnEdit } from './ruby.mjs';
@@ -35,10 +36,10 @@ export function validateDocument(raw) {
   if (
     !raw ||
     raw.format !== "open-typesetter" ||
-    ![1, 2, 3].includes(raw.version) ||
+    ![1, 2, 3, 4].includes(raw.version) ||
     !Array.isArray(raw.blocks)
   )
-    throw Error("不是受支持的书页工程（支持 version 1 / 2 / 3）。");
+    throw Error("不是受支持的书页工程（支持 version 1 / 2 / 3 / 4）。");
   if (raw.blocks.length > 10000)
     throw Error("文档超过 10,000 个段落，请分卷处理。");
   const layout = { ...defaults };
@@ -68,7 +69,7 @@ export function validateDocument(raw) {
   if(raw.layout?.writingMode!==undefined&&!['horizontal-tb','vertical-rl'].includes(raw.layout.writingMode))throw Error('文字方向无效。');
   layout.writingMode = raw.layout?.writingMode || 'horizontal-tb';
   layout.widowLines = [1,2,3].includes(raw.layout?.widowLines) ? raw.layout.widowLines : 2;
-  if(raw.layout?.fontSet!==undefined&&!['windows','mac','fandol'].includes(raw.layout.fontSet))throw Error('PDF 字体方案无效。');
+  if(raw.layout?.fontSet!==undefined&&!['windows','mac','fandol','source-han'].includes(raw.layout.fontSet))throw Error('PDF 字体方案无效。');
   if(raw.layout?.fontSet)layout.fontSet=raw.layout.fontSet;
   const seen = new Set();
   const blocks = raw.blocks.map((b) => {
@@ -141,13 +142,26 @@ export function validateDocument(raw) {
         ? Math.max(10, Math.min(100, b.width))
         : 80;
     }
+    Object.assign(block,journalBlockFields(b));
+    if(b.cellMarks!==undefined){
+      if(b.type!=='table'||!Array.isArray(b.cellMarks)||b.cellMarks.length>100000)throw Error('单元格字样无效。');
+      const cells=new Set();block.cellMarks=b.cellMarks.map(c=>{
+        const key=c.row+':'+c.col;if(!Number.isInteger(c.row)||!Number.isInteger(c.col)||c.row<0||c.col<0||block.rows[c.row]?.[c.col]===undefined||cells.has(key))throw Error('单元格字样位置无效。');cells.add(key);
+        const cellText=block.rows[c.row][c.col],formulaIds=new Set([...cellText.matchAll(/\[\[math:([-\w]+)\]\]/g)].map(m=>m[1]));
+        const cleaned=validateDocument({format:'open-typesetter',version:4,blocks:[{type:'paragraph',text:cellText,marks:c.marks,inlineMath:(b.inlineMath||[]).filter(m=>formulaIds.has(m.id))}]}).blocks[0];
+        return {row:c.row,col:c.col,marks:cleaned.marks||[]};
+      });
+    }
     const inlineMath=validateInlineMath({...block,inlineMath:b.inlineMath});
     if(inlineMath.length)block.inlineMath=inlineMath;
     return block;
   });
+  validateRelations(blocks);
+  const journal=validateJournal(raw.journal,blocks);
   return {
+    ...(journal?{journal}:{}),
     format: "open-typesetter",
-    version: raw.version===3||raw.layout?.fontSet||raw.importReports?.length||blocks.some(b=>b.inlineMath?.length||b.placement)?3:2,
+    version: raw.version===4||journal||raw.notes?.some(n=>n.marker!==undefined)||blocks.some(b=>b.role||b.anchor||b.captionIds||b.sourceOmml||b.cellMarks||b.equationNumber!==undefined||b.inlineMath?.some(m=>m.sourceOmml))?4:raw.version===3||raw.layout?.fontSet||raw.importReports?.length||blocks.some(b=>b.inlineMath?.length||b.placement)?3:2,
     title: String(raw.title || "未命名文稿").slice(0, 120),
     layout,
     blocks,
@@ -178,7 +192,7 @@ function validateNotes(raw) {
   if(raw===undefined)return [];
   if(!Array.isArray(raw)||raw.length>10000)throw Error('注释数据无效。');
   const ids=new Set();
-  return raw.map(n=>{if(!n||!/^[-\w]{1,80}$/.test(n.id)||ids.has(n.id)||typeof n.text!=='string'||n.text.length>30000)throw Error('注释 ID 重复、格式错误或文字过长。');ids.add(n.id);return {id:n.id,text:n.text};});
+  return raw.map(n=>{if(!n||!/^[-\w]{1,80}$/.test(n.id)||ids.has(n.id)||typeof n.text!=='string'||n.text.length>30000)throw Error('注释 ID 重复、格式错误或文字过长。');if(n.marker!==undefined&&(typeof n.marker!=='string'||!n.marker.length||n.marker.length>20))throw Error('注释标记无效。');ids.add(n.id);return {id:n.id,text:n.text,...(n.marker!==undefined?{marker:n.marker}:{})};});
 }
 // Preserve ranges around the smallest changed span. Newly typed characters at
 // the end of a styled range inherit that range; complete deletions remove it.

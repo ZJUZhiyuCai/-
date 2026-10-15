@@ -69,8 +69,11 @@ class JournalImportTests(unittest.TestCase):
         body='<w:p><w:r><w:sym w:font="Symbol" w:char="F061"/></w:r><m:oMath><m:r><m:rPr><m:sty m:val="b"/></m:rPr><m:t>x</m:t></m:r></m:oMath></w:p>'
         body+='<w:tbl><w:tr><w:tc><w:p><w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:t>2</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
         issues=import_docx(package(body))['importReports'][0]['diagnostics']
-        for term in ('编码符号','公式字形','表内字符样式'):
-            self.assertTrue(any(term in d['message'] and d['severity']=='error' for d in issues))
+        self.assertTrue(any('编码符号' in d['message'] and d['severity']=='error' for d in issues))
+        self.assertFalse(any(term in d['message'] for d in issues for term in ('公式字形','表内字符样式')))
+        blocks=import_docx(package(body))['blocks']
+        self.assertEqual(blocks[0]['text'],r'\mathbf{x}')
+        self.assertTrue(blocks[1]['cellMarks'][0]['marks'][0]['superscript'])
 
 
 class JournalPdfTests(unittest.TestCase):
@@ -78,7 +81,7 @@ class JournalPdfTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             doc={'layout':{'fontSet':'fandol'},'blocks':[{'type':'heading','text':'标题','fontSize':36,'fontFamily':'kai','align':'right'}, {'type':'paragraph','text':'若[[math:m]]成立','inlineMath':[{'id':'m','text':r'\left|x\right|'}],'marks':[{'start':3,'end':7,'bold':True}]}]}
             source,_=build_tex(doc,folder)
-            self.assertIn(r'若\(\left|x\right|\)成立',source)
+            self.assertRegex(source,r'若.*\\\(\\left\|x\\right\|\\\).*成立')
             self.assertIn(r'\raggedleft \fontsize{36.0}',source);self.assertIn(r'\kaifamily',source)
             self.assertLess(source.index(r'\geometry'),source.index(r'\pagestyle{fancy}'))
             doc['blocks'][1]['inlineMath'][0]['text']=r'\input{secret}'
@@ -93,7 +96,7 @@ class JournalPdfTests(unittest.TestCase):
             self.assertEqual(source.count('原始表注'),1);self.assertEqual(source.count(r'\textsuperscript{1}'),3)
             doc['blocks'][0]['placement']='full-width';source,_=build_tex(doc,folder);self.assertIn(r'\begin{longtable}',source)
             doc['blocks'][0]['text']='题注 [[math:caption]] [^n]';doc['blocks'][0]['inlineMath'].append({'id':'caption','text':'y^2'})
-            source,_=build_tex(doc,folder);self.assertIn(r'题注 \(y^2\)',source);self.assertNotIn('[[math:',source)
+            source,_=build_tex(doc,folder);self.assertRegex(source,r'题注 .*\\\(y\^2\\\)');self.assertNotIn('[[math:',source)
 
     def test_geometry_missing_dependency_is_not_pass(self):
         with patch.dict('sys.modules',{'pdfminer.high_level':None}):

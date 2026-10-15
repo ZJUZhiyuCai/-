@@ -1,8 +1,10 @@
+import {setupJournal,journalFields} from './journal-ui.mjs';
 import {setupProofUI} from './proof-ui.mjs';
 export function setupAdvanced({getDoc,getSelected,change,insert,select,status,replaceBlockText,getSelectionRange}) {
   const byId=id=>document.getElementById(id),active=()=>getDoc().blocks.find(b=>b.id===getSelected());
   const toolbar=document.querySelector('.toolbar>div');
   const makeButton=(label,callback)=>{const b=document.createElement('button');b.textContent=label;b.onclick=callback;toolbar.append(b);return b;};
+  setupJournal({getDoc,change,status,makeButton});
   makeButton('表格',()=>insert('table',{rows:[['项目','数值','说明'],['示例','100','']],headerRows:1,borderStyle:'three-line',text:'表 1'}));
   makeButton('公式',()=>insert('equation',{text:'E = mc^2',align:'center'}));
   makeButton('目录',()=>insert('toc',{text:'目录'}));
@@ -12,6 +14,7 @@ export function setupAdvanced({getDoc,getSelected,change,insert,select,status,re
   const button=(title,callback)=>{const b=document.createElement('button');b.textContent=title;b.onclick=callback;return b;};
   function mutate(fn){try{change(()=>fn(active()));}catch(e){status(e.message,true);}}
   function update(){panel.replaceChildren();const b=active();if(!b)return;
+    journalFields({panel,b,doc:getDoc(),mutate,label});
     if(['paragraph','heading'].includes(b.type)){
       const hint=document.createElement('p');hint.className='hint';hint.textContent=b.ruby?.length?'本段含注音，请在段落框编辑原文。修改基文会移除受影响的注音，请重新核对字音。':'在纸面或段落框中选择文字，再设置字符样式。';panel.append(hint);
       const tools=document.createElement('div');tools.className='inline-format';
@@ -45,7 +48,7 @@ export function setupAdvanced({getDoc,getSelected,change,insert,select,status,re
   const dialog=document.createElement('dialog');dialog.className='notes-dialog';document.body.append(dialog);
   function notesDialog(){dialog.replaceChildren();const title=document.createElement('h2');title.textContent='注释管理';dialog.append(title);
     const mode=document.createElement('select');for(const [v,t] of [['footnote','页下注'],['endnote','文末注']]){const o=document.createElement('option');o.value=v;o.textContent=t;mode.append(o);}mode.value=getDoc().layout.notesMode||'footnote';mode.onchange=()=>change(()=>getDoc().layout.notesMode=mode.value);dialog.append(label('注释位置',mode));
-    for(const [i,n] of (getDoc().notes||[]).entries()){const area=document.createElement('textarea');area.rows=3;area.value=n.text;area.maxLength=30000;area.onchange=()=>change(()=>{getDoc().notes.find(x=>x.id===n.id).text=area.value;});dialog.append(label(`${i+1}　引用标记 [^${n.id}]`,area));}
+    for(const [i,n] of (getDoc().notes||[]).entries()){const area=document.createElement('textarea');area.rows=3;area.value=n.text;area.maxLength=30000;area.onchange=()=>change(()=>{getDoc().notes.find(x=>x.id===n.id).text=area.value;});dialog.append(label(`${n.marker??i+1}　引用标记 [^${n.id}]`,area));}
     dialog.append(button('在当前段落插入注释',()=>{const b=active();if(!b||!['paragraph','heading'].includes(b.type)){status('请先选择正文或标题段落。',true);return;}const text=prompt('注释内容');if(!text)return;const id='n'+crypto.randomUUID().replaceAll('-','').slice(0,12),range=getSelectionRange(),offset=range?.id===b.id?range.end:b.text.length;change(()=>{getDoc().notes||=[];getDoc().notes.push({id,text});replaceBlockText(b,b.text.slice(0,offset)+`[^${id}]`+b.text.slice(offset));});dialog.close();notesDialog();}),button('关闭',()=>dialog.close()));dialog.showModal();}
   makeButton('注释',notesDialog);
   setupProofUI({getDoc,change,status});

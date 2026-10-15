@@ -121,3 +121,8 @@ node scripts/mcp-demo.mjs --workspace C:/books/shuye-workspace --pdf
 见 [逐项验收](mcp-acceptance.md)。MCP 提供当前排版模型的代码控制，不补齐原引擎所有缺口：独立 PDF 竖排、页码交叉引用、字符级批注、自由坐标绘图尚不支持；PDF 绕图仍降级，PDF/X/CMYK 未认证。validate_project 是结构与引用校验，返回 `visualPaginationChecked: false`；正式成书需检查实际输出。
 
 实现使用 [官方 TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk) 和 [MCP stdio](https://modelcontextprotocol.io/docs/develop/build-server)，依赖锁定于 package-lock.json。
+
+
+## 期刊 v4
+
+`set_journal` 保存首面模板；图表的 `anchor`、`captionIds`、公式的 `equationNumber` 和段落 `role` 均通过现有事务修改。`get_proof_page` 增加当前页的 `objects` 与 `objectTotal`，其分页独立于文字行数；取全量时按两者较大值继续分页。`semanticLayout` 的点位为语义起止位置，不是墨迹框。字段、复现命令和边界见 [期刊 v4 实稿记录](journal-pilot-v4.md)。

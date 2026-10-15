@@ -1,5 +1,7 @@
 # 期刊生产验收：本次 PR 的证据与边界
 
+当前实现与实稿结果以 [v4 期刊试产记录](journal-pilot-v4.md) 为准；下文保留第一轮 v3 回归证据。
+
 本次修复面向中文学术期刊试产。**结构合法、PDF 可生成、测试通过，均不代表正式发印批准。** 官方竞品调研和产品优先级见 [方正飞翔对照](founder-fly-journal-gap.md)。
 
 ## 可重复执行
@@ -50,7 +52,7 @@ Windows PowerShell 使用 `$env:SHUYE_TEST_PDF='1'` 后运行 `npm test`。`SHUY
 
 新校样的默认图像阈值为 300 dpi，可通过 `options.minDpi` 显式修改；这不是所有线图、网点或印厂通用的技术标准。旧独立 PDF 预检入口仍保留其可配置阈值。PDF 文字几何基于 [pdfminer.six 页面布局 API](https://pdfminersix.readthedocs.io/en/latest/tutorial/extract_pages.html)；浏览器校样基于 [PDF.js 官方接口](https://mozilla.github.io/pdf.js/examples/)，所有运行资源本地加载。
 
-## 模型迁移与已知限制
+## 第一轮 v3 的模型迁移与限制（后续以 v4 记录为准）
 
 v1/v2 旧工程可读；v3 增加 `inlineMath`、`importReports`、PDF 字体方案及表格位置。新字段触发升级为 v3，旧版程序应拒绝打开，避免静默丢字段。公式标记须与同块定义一一对应。原 DOCX 不嵌入工程；独立保留它，并以导入 SHA-256 核对来源。导入审计是历史证据，普通编辑不能自动消除旧问题；修复原稿重新导入新工程，或另建有审批记录的处置流程。
 

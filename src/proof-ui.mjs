@@ -25,7 +25,7 @@ export function setupProofUI({getDoc,change,status}) {
     paragraph('以下预览和下载使用同一份 PDF。编辑区的浏览器分页仅供编辑参考；PDF 校样仍需内容、视觉及印前验收。');
     const label=document.createElement('label');label.textContent='PDF 字体方案 ';
     const font=document.createElement('select');
-    for(const [value,text] of [['','服务端配置（默认 Windows）'],['windows','Windows：宋体 / 黑体 / 楷体'],['mac','macOS：宋体 / 黑体 / 楷体'],['fandol','Fandol（TeX 自带）']]){const option=document.createElement('option');option.value=value;option.textContent=text;font.append(option);}
+    for(const [value,text] of [['','服务端配置（默认 Windows）'],['windows','Windows：宋体 / 黑体 / 楷体'],['mac','macOS：宋体 / 黑体 / 楷体'],['fandol','Fandol（TeX 自带）'],['source-han','思源宋体/黑体（需安装）']]){const option=document.createElement('option');option.value=value;option.textContent=text;font.append(option);}
     font.value=getDoc().layout.fontSet||'';
     font.onchange=()=>change(()=>{if(font.value)getDoc().layout.fontSet=font.value;else delete getDoc().layout.fontSet;});
     label.append(font);dialog.append(label);
