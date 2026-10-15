@@ -7,7 +7,7 @@ export function checkDocument(raw){
   documentSchema.parse(raw);
   const ids=new Set();for(const b of raw.blocks){if(b.id){if(ids.has(b.id))throw Error(`DUPLICATE_ID: ${b.id}`);ids.add(b.id);}if(b.headerRows!==undefined&&b.headerRows>(b.rows?.length??0))throw Error('INVALID_HEADER_ROWS');}
   for(const b of raw.blocks){
-    for(const key of ['rows','headerRows','borderStyle','merges','columnWidths'])if(b[key]!==undefined&&b.type!=='table')throw Error(`PROPERTY_REQUIRES_TABLE: ${key}`);
+    for(const key of ['placement','rows','headerRows','borderStyle','merges','columnWidths'])if(b[key]!==undefined&&b.type!=='table')throw Error(`PROPERTY_REQUIRES_TABLE: ${key}`);
     for(const key of ['src','width','wrap'])if(b[key]!==undefined&&b.type!=='image')throw Error(`PROPERTY_REQUIRES_IMAGE: ${key}`);
     if(b.type==='table'&&new Set(b.rows?.map(r=>r.length)).size>1)throw Error('RAGGED_TABLE_ROWS');
   }
@@ -21,7 +21,7 @@ function boundary(text,index){
   if(index<0||index>text.length)throw Error('INVALID_OFFSET');
   const points=new Set([text.length,...new Intl.Segmenter('zh',{granularity:'grapheme'}).segment(text)].map(x=>typeof x==='number'?x:x.index));
   if(!points.has(index))throw Error('INVALID_GRAPHEME_BOUNDARY');
-  for(const m of text.matchAll(/\[\^[-\w]+\]|\[\[(?:ref|cite):[-\w]+\]\]/g))if(index>m.index&&index<m.index+m[0].length)throw Error('REFERENCE_TOKEN_IS_ATOMIC');
+  for(const m of text.matchAll(/\[\^[-\w]+\]|\[\[(?:ref|cite|math):[-\w]+\]\]/g))if(index>m.index&&index<m.index+m[0].length)throw Error('REFERENCE_TOKEN_IS_ATOMIC');
 }
 export function chapterIds(doc,headingId){
   const at=doc.blocks.findIndex(b=>b.id===headingId);const heading=doc.blocks[at];if(heading?.type!=='heading')throw Error('CHAPTER_HEADING_NOT_FOUND');

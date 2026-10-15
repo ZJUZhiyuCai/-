@@ -224,7 +224,7 @@ async function render() {
         el.dataset.start = part.start;
         el.dataset.end = part.end;
         if (part.block.id === selected) el.classList.add("selected");
-        if (['paragraph','heading'].includes(part.block.type) && !part.readOnly && !part.block.ruby?.length) {
+        if (['paragraph','heading'].includes(part.block.type) && !part.readOnly && !part.block.ruby?.length && !part.block.inlineMath?.length) {
           el.contentEditable = "plaintext-only";
           el.spellcheck = false;
           el.setAttribute(
@@ -566,6 +566,7 @@ $("fileInput").onchange = async (e) => {
         layout: defaults,
         blocks: result.blocks,
         notes: result.notes||[],
+        importReports: result.importReports||[],
       });
     } else {
       const data = await f.arrayBuffer();

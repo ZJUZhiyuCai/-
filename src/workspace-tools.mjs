@@ -19,7 +19,7 @@ export function runTextOperations(doc,operations,blockId=null){
     if(!['paragraph','heading'].includes(b.type)||(blockId&&b.id!==blockId))continue;
     let text=b.text;
     // References are structural tokens, never subject to case or width changes.
-    for(const op of operations)text=text.split(/(\[\^[-\w]+\])/g).map(s=>/^\[\^[-\w]+\]$/.test(s)?s:transformText(s,op)).join('');
+    for(const op of operations)text=text.split(/(\[\^[-\w]+\]|\[\[(?:ref|cite|math):[-\w]+\]\])/g).map(s=>/^(?:\[\^[-\w]+\]|\[\[(?:ref|cite|math):[-\w]+\]\])$/.test(s)?s:transformText(s,op)).join('');
     if(text!==b.text){replaceBlockText(b,text);changed++;}
   }
   return {doc:validateDocument(next),changed};
@@ -54,6 +54,7 @@ export function assembleBook(doc,chapters){
     next.bibliography.push(...chapter.bibliography.map(n=>({...n,id:bibIds.get(n.id)})));
     next.comments.push(...chapter.comments.map(c=>({...c,id:uid(),blockId:ids.get(c.blockId)})));
     next.proSources.push(...chapter.proSources);
+    next.importReports.push(...chapter.importReports);
     next.bookmarks.push(...chapter.bookmarks.map(b=>({...b,blockId:ids.get(b.blockId)})));
     next.indexTerms=[...new Set([...next.indexTerms,...chapter.indexTerms])];
     for(const s of chapter.styles){if(!next.styles.some(x=>x.name===s.name))next.styles.push(s);else if(JSON.stringify(next.styles.find(x=>x.name===s.name))!==JSON.stringify(s))warnings.push(`章节“${chapter.title}”的同名样式“${s.name}”使用当前工程定义；已有段落直接格式保留。`);}

@@ -44,11 +44,14 @@ export function safeFlowCut(points,start,count,ruby=[]) {
   const offset=points.slice(0,start).join('').length,end=offset+points.slice(start,start+count).join('').length;
   const hit=ruby.find(r=>r.start<end&&r.end>end);
   if(hit)count=Array.from(points.slice(start).join('').slice(0,Math.max(0,hit.start-offset))).length;
+  // Punctuation adjustment may enter a structural token; protect after it too.
+  const rest=points.slice(start).join(''),cut=points.slice(start,start+count).join('').length;
+  for(const m of rest.matchAll(/\[\^[-\w]+\]|\[\[(?:math|ref|cite):[-\w]+\]\]/g))if(m.index<cut&&m.index+m[0].length>cut)count=Array.from(rest.slice(0,m.index)).length;
   return count;
 }
 export function minimumFlowUnit(points,start,ruby=[]) {
   const text=points.slice(start).join(''),offset=points.slice(0,start).join('').length;
-  const hit=ruby.find(r=>r.start===offset),note=/^\[\^[-\w]+\]/.exec(text);
+  const hit=ruby.find(r=>r.start===offset),note=/^(?:\[\^[-\w]+\]|\[\[(?:math|ref|cite):[-\w]+\]\])/.exec(text);
   return hit?Array.from(text.slice(0,hit.end-offset)).length:note?Array.from(note[0]).length:1;
 }
 // Count physical text lines, excluding annotation text. Marks can produce several

@@ -1,3 +1,4 @@
+import {validateInlineMath,validateImportReports} from './integrity.mjs';
 import { validateTable } from './table-layout.mjs';
 import { validateRuby,adjustRubyOnEdit } from './ruby.mjs';
 export const uid = () => globalThis.crypto.randomUUID();
@@ -34,10 +35,10 @@ export function validateDocument(raw) {
   if (
     !raw ||
     raw.format !== "open-typesetter" ||
-    ![1, 2].includes(raw.version) ||
+    ![1, 2, 3].includes(raw.version) ||
     !Array.isArray(raw.blocks)
   )
-    throw Error("不是受支持的书页工程（支持 version 1 / 2）。");
+    throw Error("不是受支持的书页工程（支持 version 1 / 2 / 3）。");
   if (raw.blocks.length > 10000)
     throw Error("文档超过 10,000 个段落，请分卷处理。");
   const layout = { ...defaults };
@@ -67,6 +68,8 @@ export function validateDocument(raw) {
   if(raw.layout?.writingMode!==undefined&&!['horizontal-tb','vertical-rl'].includes(raw.layout.writingMode))throw Error('文字方向无效。');
   layout.writingMode = raw.layout?.writingMode || 'horizontal-tb';
   layout.widowLines = [1,2,3].includes(raw.layout?.widowLines) ? raw.layout.widowLines : 2;
+  if(raw.layout?.fontSet!==undefined&&!['windows','mac','fandol'].includes(raw.layout.fontSet))throw Error('PDF 字体方案无效。');
+  if(raw.layout?.fontSet)layout.fontSet=raw.layout.fontSet;
   const seen = new Set();
   const blocks = raw.blocks.map((b) => {
     if (!b || !["paragraph", "heading", "pageBreak", "image", "table", "equation", "toc", "index"].includes(b.type))
@@ -121,6 +124,7 @@ export function validateDocument(raw) {
       block.headerRows=Number.isInteger(b.headerRows)?Math.max(0,Math.min(b.rows.length,b.headerRows)):1;
       block.borderStyle=b.borderStyle==='three-line'?'three-line':'grid';
       Object.assign(block,validateTable(b));
+      if(b.placement!==undefined){if(!['auto','column','full-width'].includes(b.placement))throw Error('表格位置无效。');block.placement=b.placement;}
     }
     if(b.type==='equation'&&block.text.length>20000)throw Error('公式过长，请拆分。');
     if (b.type === "image") {
@@ -137,15 +141,18 @@ export function validateDocument(raw) {
         ? Math.max(10, Math.min(100, b.width))
         : 80;
     }
+    const inlineMath=validateInlineMath({...block,inlineMath:b.inlineMath});
+    if(inlineMath.length)block.inlineMath=inlineMath;
     return block;
   });
   return {
     format: "open-typesetter",
-    version: 2,
+    version: raw.version===3||raw.layout?.fontSet||raw.importReports?.length||blocks.some(b=>b.inlineMath?.length||b.placement)?3:2,
     title: String(raw.title || "未命名文稿").slice(0, 120),
     layout,
     blocks,
     notes: validateNotes(raw.notes),
+    importReports: validateImportReports(raw.importReports),
     indexTerms: Array.isArray(raw.indexTerms) ? [...new Set(raw.indexTerms.map(String).filter(s=>s.length>0&&s.length<100))].slice(0,1000) : [],
     styles: Array.isArray(raw.styles) ? raw.styles.slice(0,100).map(s=>({name:String(s.name||'未命名样式').slice(0,80),type:s.type==='heading'?'heading':'paragraph',fontFamily:['serif','sans','kai'].includes(s.fontFamily)?s.fontFamily:'serif',fontSize:Number.isFinite(s.fontSize)?Math.max(5,Math.min(72,s.fontSize)):11,align:['left','center','right','justify'].includes(s.align)?s.align:'justify',bold:!!s.bold,indent:Number.isFinite(s.indent)?Math.max(0,Math.min(20,s.indent)):2,level:Number.isInteger(s.level)?Math.max(1,Math.min(4,s.level)):1})) : [],
     bookmarks: Array.isArray(raw.bookmarks)?raw.bookmarks.slice(0,1000).filter(b=>b&&blocks.some(x=>x.id===b.blockId)).map(b=>({name:String(b.name||'书签').slice(0,80),blockId:b.blockId})):[],

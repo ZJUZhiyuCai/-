@@ -11,7 +11,7 @@ import threading
 
 _LOCK=threading.Lock()
 TEX_DEFAULT=Path.home()/'AppData/Roaming/TinyTeX/bin/windows/xelatex.exe'
-SAFE_COMMANDS=set('frac dfrac tfrac sqrt sum prod int oint iint iiint lim min max log ln exp sin cos tan cot sec csc arcsin arccos arctan sinh cosh tanh alpha beta gamma delta epsilon varepsilon zeta eta theta vartheta iota kappa lambda mu nu xi pi varpi rho varrho sigma varsigma tau upsilon phi varphi chi psi omega Gamma Delta Theta Lambda Xi Pi Sigma Upsilon Phi Psi Omega left right middle cdot times div pm mp le leq ge geq neq approx equiv sim simeq propto in notin subset supset subseteq supseteq cup cap emptyset infinity infty partial nabla forall exists neg land lor to rightarrow leftarrow leftrightarrow Rightarrow Leftarrow Leftrightarrow mapsto overline underline hat widehat bar vec dot ddot tilde widetilde overbrace underbrace text mathrm mathbf mathit mathsf mathtt mathcal mathbb operatorname limits nolimits displaystyle textstyle scriptstyle scriptscriptstyle quad qquad space thinspace backslash lbrace rbrace langle rangle lvert rvert vert Vert colon ldots cdots vdots ddots binom dbinom tbinom overset underset stackrel big Big bigg Bigg bmod pmod mod det gcd ker hom dim sup inf Pr begin end'.split())
+SAFE_COMMANDS=set('frac dfrac tfrac sqrt sum prod int oint iint iiint lim min max log ln exp sin cos tan cot sec csc arcsin arccos arctan sinh cosh tanh alpha beta gamma delta epsilon varepsilon zeta eta theta vartheta iota kappa lambda mu nu xi pi varpi rho varrho sigma varsigma tau upsilon phi varphi chi psi omega Gamma Delta Theta Lambda Xi Pi Sigma Upsilon Phi Psi Omega left right middle cdot times div pm mp le leq ge geq neq approx equiv sim simeq propto in notin subset supset subseteq supseteq cup cap emptyset infinity infty partial nabla forall exists neg land lor to rightarrow leftarrow leftrightarrow Rightarrow Leftarrow Leftrightarrow mapsto overline underline hat widehat bar vec dot ddot tilde widetilde overbrace underbrace text mathrm mathbf mathit mathsf mathtt mathcal mathbb operatorname limits nolimits displaystyle textstyle scriptstyle scriptscriptstyle quad qquad space thinspace backslash lceil rceil lfloor rfloor lbrace rbrace langle rangle lvert rvert vert Vert colon ldots cdots vdots ddots binom dbinom tbinom overset underset stackrel big Big bigg Bigg bmod pmod mod det gcd ker hom dim sup inf Pr begin end'.split())
 SAFE_ENVS={'matrix','pmatrix','bmatrix','Bmatrix','vmatrix','Vmatrix','cases','aligned','gathered'}
 def escape(text):
     return ''.join({'\\':r'\textbackslash{}','{':r'\{','}':r'\}','$':r'\$','&':r'\&','#':r'\#','%':r'\%','_':r'\_','^':r'\textasciicircum{}','~':r'\textasciitilde{}','\n':r'\newline ','\t':r'\quad '}.get(c,c) for c in str(text) if ord(c)>=32 or c in '\n\t')
@@ -35,10 +35,15 @@ def number(value,default,lo,hi):
     if not math.isfinite(n) or not lo<=n<=hi: raise ValueError('版式数值超出范围。')
     return n
 
+def resolve_font_set(layout):
+    value=layout.get('fontSet') or os.environ.get('SHUYE_FONTSET','windows')
+    if value not in ('windows','mac','fandol'): raise ValueError('PDF 字体方案必须为 windows / mac / fandol。')
+    return value
+
 def build_tex(doc,assets_dir):
     """Return (trusted TeX source, warnings); assets_dir must be a private build dir."""
     warnings=[]; assets_dir=Path(assets_dir); assets_dir.mkdir(parents=True,exist_ok=True)
-    layout=doc.get('layout',{})
+    layout=doc.get('layout',{}); font_set=resolve_font_set(layout)
     if layout.get('widowLines',1)>1: warnings.append('PDF 使用 TeX 防孤行策略，不能保证浏览器设定的孤行数量。')
     if layout.get('writingMode','horizontal') not in ('horizontal','horizontal-tb') or layout.get('vertical'): raise ValueError('正式 PDF 暂不支持竖排，请切换横排。')
     blocks=doc.get('blocks',[])
@@ -51,14 +56,19 @@ def build_tex(doc,assets_dir):
     cols=int(number(layout.get('columns'),1,1,4))
     notes={str(n.get('id')):str(n.get('text','')) for n in doc.get('notes',[]) if isinstance(n,dict)}; note_seen=set()
     note_numbers={ident:i+1 for i,ident in enumerate(notes)}
-    def plain(s):
+    def plain(s,formulas=None,table_notes=None):
         out=[]; start=0
-        for m in re.finditer(r'\[\^([^\]\n]+)\]',s):
+        for m in re.finditer(r'\[\^([^\]\n]+)\]|\[\[math:([-\w]+)\]\]',s):
             out.append(escape(s[start:m.start()])); ident=m.group(1)
+            if m.group(2):
+                if m.group(2) not in (formulas or {}): raise ValueError('缺少行内公式定义：'+m.group(2))
+                out.append(r'\('+safe_math(formulas[m.group(2)])+r'\)');start=m.end();continue
             if ident in notes:
                 if layout.get('notesMode')=='endnote': out.append(r'\textsuperscript{'+str(note_numbers[ident])+'}'); note_seen.add(ident)
-                elif ident in note_seen: out.append(r'\textsuperscript{*}'); warnings.append('重复脚注引用以星号显示：'+ident)
-                else: out.append(r'\footnote{'+escape(notes[ident])+'}'); note_seen.add(ident)
+                elif table_notes is not None:
+                    out.append(r'\textsuperscript{'+str(note_numbers[ident])+'}');table_notes.add(ident);note_seen.add(ident)
+                elif ident in note_seen: out.append(r'\textsuperscript{'+str(note_numbers[ident])+'}')
+                else: out.append(r'\footnote['+str(note_numbers[ident])+']{'+escape(notes[ident])+'}');note_seen.add(ident)
             else: out.append(escape(m.group(0))); warnings.append('缺少脚注内容：'+ident)
             start=m.end()
         out.append(escape(s[start:])); return ''.join(out)
@@ -77,7 +87,7 @@ def build_tex(doc,assets_dir):
                 except (KeyError,ValueError,TypeError): raise ValueError('注音必须使用有效 UTF-16 字符边界。')
                 if a>=z or not isinstance(reading,str) or not reading.strip() or len(reading)>1000 or '\n' in reading: raise ValueError('注音范围或文字无效。')
                 if '\n' in s[a:z]: raise ValueError('注音不能跨越换行。')
-                if any(a<m.end() and z>m.start() for m in re.finditer(r'\[\^[^\]\n]+\]',s)): raise ValueError('注音不能覆盖脚注标记。')
+                if any(a<m.end() and z>m.start() for m in re.finditer(r'\[\^[^\]\n]+\]|\[\[math:([-\w]+)\]\]',s)): raise ValueError('注音不能覆盖脚注标记。')
                 spans.append((a,z,reading))
             spans.sort()
             if any(spans[i][0]<spans[i-1][1] for i in range(1,len(spans))): raise ValueError('注音范围不能重叠。')
@@ -97,14 +107,14 @@ def build_tex(doc,assets_dir):
             try: a=offsets.index(int(m['start'])); z=offsets.index(int(m['end']))
             except (KeyError,ValueError,TypeError): warnings.append('无效逐字样式范围已忽略。'); continue
             if a<z: boundaries.update((a,z)); converted.append((a,z,m))
-        for ref in re.finditer(r'\[\^[^\]\n]+\]',s):
+        for ref in re.finditer(r'\[\^[^\]\n]+\]|\[\[math:([-\w]+)\]\]',s):
             boundaries={x for x in boundaries if not ref.start()<x<ref.end()}
         result=[]; ends=sorted(boundaries)
         for a,z in zip(ends,ends[1:]):
             style={}
             for x,y,m in converted:
                 if x<=a and z<=y: style.update(m)
-            t=plain(s[a:z])
+            t=plain(s[a:z],{m['id']:m['text'] for m in b.get('inlineMath',[])})
             for key,cmd in [('bold','textbf'),('italic','textit'),('underline','uline'),('superscript','textsuperscript'),('subscript','textsubscript')]:
                 if style.get(key): t='\\'+cmd+'{'+t+'}'
             if style.get('bold') is False: t=r'\textmd{'+t+'}'
@@ -115,22 +125,24 @@ def build_tex(doc,assets_dir):
                 size=number(style['fontSize'],11,5,72); t=r'{\fontsize{'+str(size)+'}{'+str(size*1.3)+r'}\selectfont '+t+'}'
             result.append(t)
         return ''.join(result)
-    pre=r'''\documentclass[twoside,UTF8,fontset=windows]{ctexart}
+    pre=r'''\documentclass[twoside,UTF8,fontset=SHUYEFONTSET]{ctexart}
 \usepackage{geometry,fontspec,graphicx,longtable,array,booktabs,amsmath,amssymb,fancyhdr,multicol,xcolor,multirow}
 \usepackage[normalem]{ulem}
 \usepackage[latin,nooverlap]{ruby}
-\newCJKfontfamily\kaifamily{KaiTi}
+\newCJKfontfamily\kaifamily{SHUYEKAI}
 \newlength{\ShuyeTableWidth}
 \usepackage[unicode,hidelinks]{hyperref}
 \setcounter{secnumdepth}{0}
 \setcounter{tocdepth}{4}
 \clubpenalty=10000
 \widowpenalty=10000
-\pagestyle{fancy}\fancyhf{}
+% fancyhdr is activated after geometry so it uses the actual paper width.
 \renewcommand{\headrulewidth}{0.3pt}
 \setlength{\headheight}{18pt}
 '''
     pre+=r'\geometry{paperwidth='+str(values['width'])+'mm,paperheight='+str(values['height'])+'mm,top='+str(values['top'])+'mm,bottom='+str(values['bottom'])+'mm,inner='+str(values['inner'])+'mm,outer='+str(values['outer'])+'mm}\n'
+    pre=pre.replace('SHUYEFONTSET',font_set).replace('SHUYEKAI',{'windows':'KaiTi','mac':'Kaiti SC','fandol':'FandolKai-Regular.otf'}[font_set])
+    pre+=r'\pagestyle{fancy}\fancyhf{}\setlength{\headwidth}{\textwidth}'+'\n'
     pre+=r'\fancyhead[LE]{'+escape(layout.get('headerEven',layout.get('header','')))+r'}\fancyhead[RO]{'+escape(layout.get('headerOdd',layout.get('header','')))+'}\n'
     footer=lambda s: r'\thepage{}'.join(escape(part) for part in str(s).split('{page}'))
     pre+=r'\fancyfoot[LE]{'+footer(layout.get('footerEven',layout.get('footer','{page}')))+r'}\fancyfoot[RO]{'+footer(layout.get('footer','{page}'))+'}\n'
@@ -147,11 +159,23 @@ def build_tex(doc,assets_dir):
             if term in str(b.get('text','')) and b.get('type')!='index':
                 label='idx-'+str(term_num)+'-'+str(block_num); block_labels+=r'\phantomsection\label{'+label+'}'
         typ=b.get('type')
+        formulas=b.get('inlineMath',[]);formula_ids=[m.get('id') for m in formulas]
+        if formulas and typ not in ('paragraph','heading','table'): raise ValueError('该类型不能使用行内公式。')
+        if len(formula_ids)!=len(set(formula_ids)): raise ValueError('行内公式 ID 重复。')
+        tokens=[m.group(1) for value in [str(b.get('text',''))]+[str(c) for row in b.get('rows',[]) for c in row] for m in re.finditer(r'\[\[math:([-\w]+)\]\]',value)]
+        if sorted(tokens)!=sorted(formula_ids) or len(tokens)!=len(set(tokens)): raise ValueError('行内公式标记与定义不一致。')
+        formula_map={m['id']:m['text'] for m in formulas}
+        table_notes=set() if typ=='table' else None
         if b.get('ruby') and typ not in ('paragraph','heading'): raise ValueError('正式 PDF 仅支持正文和标题块的注音。')
-        text=styled(b) if typ in ('paragraph','heading') else escape(b.get('text',''))
+        text=styled(b) if typ in ('paragraph','heading') else plain(b.get('text',''),formula_map,table_notes) if typ=='table' else escape(b.get('text',''))
         if typ in ('paragraph','heading'):
             if typ=='heading':
-                lev=int(number(b.get('level'),1,1,4)); content.append('\\'+['section','subsection','subsubsection','paragraph'][lev-1]+'{'+text+'}'+block_labels); continue
+                lev=int(number(b.get('level'),1,1,4));command=['section','subsection','subsubsection','paragraph'][lev-1]
+                size=number(b.get('fontSize'),values['fontSize']*(1.8-lev*.2),5,72)
+                fmt=r'\normalfont\bfseries '+{'serif':r'\rmfamily ','sans':r'\sffamily ','kai':r'\kaifamily '}.get(b.get('fontFamily'),'')
+                fmt+={'left':r'\raggedright ','right':r'\raggedleft ','center':r'\centering '}.get(b.get('align'),'')
+                fmt+=r'\fontsize{'+str(size)+'}{'+str(size*1.5)+r'}\selectfont '
+                content.append(r'\begingroup\ctexset{'+command+'={format={'+fmt+'}}}'+chr(92)+command+'{'+text+'}'+block_labels+r'\endgroup');continue
             style=''
             if 'indentPt' in b: style+=r'\setlength{\parindent}{'+str(number(b['indentPt'],0,0,200))+'pt}'
             elif 'indent' in b: style+=r'\setlength{\parindent}{'+str(number(b['indent'],2,0,20))+'em}'
@@ -180,7 +204,11 @@ def build_tex(doc,assets_dir):
             width=number(b.get('width'),80,1,100)/100
             content.append(r'\par\begingroup\centering\includegraphics[width='+str(width)+r'\linewidth,height=.8\textheight,keepaspectratio]{'+name+'}'+r'\par '+text+r'\par\endgroup')
         elif typ=='table':
-            columns(False); rows=b.get('rows',[])
+            rows=b.get('rows',[])
+            placement=b.get('placement','auto')
+            if placement not in ('auto','column','full-width'): raise ValueError('表格位置无效。')
+            in_column=cols>1 and (placement=='column' or (placement=='auto' and len(rows)<=10 and max(map(len,rows),default=0)<=4))
+            if not in_column: columns(False)
             if not rows: warnings.append('空表格已忽略。'); columns(True); continue
             if len(rows)>5000 or max(map(len,rows))>50: raise ValueError('表格过大。')
             n=max(map(len,rows)); heads=min(len(rows),int(number(b.get('headerRows'),1,0,len(rows)))); grid=b.get('borderStyle','grid')=='grid'
@@ -204,7 +232,7 @@ def build_tex(doc,assets_dir):
             row_heights=[values['fontSize']*1.5 for row in rows]
             for (r,c),(rs,cs) in anchors.items():
                 contents='\n'.join(str(rows[rr][cc]) for rr in range(r,r+rs) for cc in range(c,c+cs) if cc<len(rows[rr]) and str(rows[rr][cc]))
-                available=(values['width']-values['inner']-values['outer'])*72/25.4*sum(widths[c:c+cs])-12
+                available=((values['width']-values['inner']-values['outer']-values['gap']*(cols-1))/cols if in_column else values['width']-values['inner']-values['outer'])*72/25.4*sum(widths[c:c+cs])-12
                 chars=max(1,available/values['fontSize']); lines=sum(max(1,math.ceil(len(line)/chars)) for line in contents.split('\n'))
                 needed=(lines+1)*values['fontSize']*values['lineHeight']
                 for rr in range(r,r+rs): row_heights[rr]=max(row_heights[rr],needed/rs)
@@ -223,10 +251,10 @@ def build_tex(doc,assets_dir):
                         r,c,rs,cs=merge
                         if j!=c: j+=1;continue
                         t='\n'.join(str(rows[rr][cc]) for rr in range(r,r+rs) for cc in range(c,c+cs) if cc<len(rows[rr]) and str(rows[rr][cc])) if ri==r else ''
-                        t=escape(t)
+                        t=plain(t,formula_map,table_notes)
                         if ri==r and rs>1: t=r'\multirow[t]{'+str(rs)+'}{'+cell_width(c,cs)+'}{'+t+'}'
                         if cs>1: t=r'\multicolumn{'+str(cs)+'}{'+('|' if grid else '')+'p{'+cell_width(c,cs)+'}'+('|' if grid else '')+'}{'+(r'\rule{0pt}{'+str(round(row_heights[ri],2))+'pt}' if j==0 else '')+t+'}'
-                    else: t=escape(rows[ri][j] if j<len(rows[ri]) else '')
+                    else: t=plain(rows[ri][j] if j<len(rows[ri]) else '',formula_map,table_notes)
                     # A phantom strut distributes space for long merged-cell text.
                     if j==0 and not (merge and span>1): t=r'\rule{0pt}{'+str(round(row_heights[ri],2))+'pt}'+t
                     cells.append(t);j+=span
@@ -240,20 +268,26 @@ def build_tex(doc,assets_dir):
                         elif start is not None:runs.append((start+1,cc));start=None
                     suffix+=''.join(r'\cline{'+str(a)+'-'+str(z)+'}' for a,z in runs)
                 return ' & '.join(cells)+suffix
-            content.append(r'\setlength{\ShuyeTableWidth}{\linewidth}'+r'\begin{longtable}{'+spec+'}')
+            env='tabular' if in_column else 'longtable'
+            if in_column: content.append(r'\par\noindent\begin{minipage}{\linewidth}')
+            content.append(r'\setlength{\ShuyeTableWidth}{\linewidth}'+r'\begin{'+env+'}{'+spec+'}')
             # Explicit spanning title rows avoid longtable's automatic table number.
             # Separate first/continuation heads also work when headerRows is zero.
             def table_head(continued=False):
                 if text:
                     title=text+('（续）' if continued else '')
-                    content.append(r'\multicolumn{'+str(n)+r'}{c}{\parbox{.95\ShuyeTableWidth}{\centering '+title+r'}} \\[6pt]')
+                    content.append(r'\multicolumn{'+str(n)+r'}{@{}c@{}}{\parbox{\ShuyeTableWidth}{\centering '+title+r'}} \\[6pt]')
                 content.append(r'\hline' if grid else r'\toprule')
                 content.extend(render(ri) for ri in range(heads))
                 if heads and not grid: content.append(r'\midrule')
-            table_head(); content.append(r'\endfirsthead')
-            table_head(True); content.append(r'\endhead')
-            content.extend(render(ri) for ri in range(heads,len(rows))); content.append((r'\hline' if grid else r'\bottomrule')+r'\end{longtable}')
-            if cols>1: warnings.append('长表格以通栏输出，表格前后恢复双栏。')
+            table_head()
+            if not in_column:
+                content.append(r'\endfirsthead');table_head(True);content.append(r'\endhead')
+            content.extend(render(ri) for ri in range(heads,len(rows))); content.append((r'\hline' if grid else r'\bottomrule')+r'\end{'+env+'}')
+            for ident in sorted(table_notes,key=lambda k:note_numbers[k]):
+                content.append(r'\par\noindent{\footnotesize '+r'\textsuperscript{'+str(note_numbers[ident])+'} '+escape(notes[ident])+r'\par}')
+            if in_column: content.append(r'\end{minipage}\par')
+            elif cols>1: warnings.append('长表格以通栏输出，表格前后恢复双栏。')
             columns(True)
         elif typ=='toc': columns(False); content.append(r'\tableofcontents\clearpage'); columns(True)
         elif typ=='index':
@@ -285,6 +319,7 @@ def render_pdf(doc):
             log=result.stdout.decode('utf-8',errors='replace')
             if 'Overfull' in log: warnings.append('存在超出版心的行或表格，请检查 PDF。')
             if 'Missing character:' in log: warnings.append('存在字体缺字，请检查 PDF 并更换字体。')
+            if 'LaTeX Font Warning:' in log: warnings.append('存在字体形状替代，请核对 PDF 中的粗体、斜体和数学字形。')
             pdf=(folder/'book.pdf').read_bytes()
-            return {'pdf':pdf,'warnings':warnings}
+            return {'pdf':pdf,'warnings':list(dict.fromkeys(warnings)),'fontSet':resolve_font_set(doc.get('layout',{})),'engine':'XeLaTeX','engineVersion':subprocess.run([exe,'--version'],capture_output=True,text=True,timeout=10).stdout.splitlines()[0]}
     finally: _LOCK.release()

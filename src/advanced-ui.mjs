@@ -1,4 +1,4 @@
-import {materializeReferences} from './references.mjs';
+import {setupProofUI} from './proof-ui.mjs';
 export function setupAdvanced({getDoc,getSelected,change,insert,select,status,replaceBlockText,getSelectionRange}) {
   const byId=id=>document.getElementById(id),active=()=>getDoc().blocks.find(b=>b.id===getSelected());
   const toolbar=document.querySelector('.toolbar>div');
@@ -22,10 +22,15 @@ export function setupAdvanced({getDoc,getSelected,change,insert,select,status,re
       const indent=document.createElement('input');indent.type='number';indent.min=0;indent.max=20;indent.step=.5;indent.value=b.indent??getDoc().layout.indent;indent.onchange=()=>mutate(block=>{block.indent=Number(indent.value);delete block.indentPt;});panel.append(label('本段首行缩进 / 字',indent));
       if(b.type==='heading'){const level=document.createElement('select');for(let i=1;i<=4;i++){const op=document.createElement('option');op.value=i;op.textContent=`${i} 级标题`;level.append(op);}level.value=b.level||1;level.onchange=()=>mutate(block=>block.level=Number(level.value));panel.append(label('目录层级',level));}
     }
+    if(b.inlineMath?.length){
+      const hint=document.createElement('p');hint.className='hint';hint.textContent='本段/单元格使用 [[math:ID]] 保留公式位置；在下方编辑公式，移动时请保留完整标记。';panel.append(hint);
+      for(const formula of b.inlineMath){const input=document.createElement('textarea');input.rows=2;input.value=formula.text;input.onchange=()=>mutate(block=>block.inlineMath.find(m=>m.id===formula.id).text=input.value);panel.append(label('行内公式 '+formula.id,input));}
+    }
     if(b.type==='image'){
       const wrap=document.createElement('select');for(const [v,t]of [['none','独占一段'],['left','图片居左，文字右侧绕排'],['right','图片居右，文字左侧绕排']]){const o=document.createElement('option');o.value=v;o.textContent=t;wrap.append(o);}wrap.value=b.wrap||'none';wrap.onchange=()=>mutate(block=>block.wrap=wrap.value);panel.append(label('图文关系',wrap));
     }
     if(b.type==='table'){
+      const placement=document.createElement('select');for(const [v,t]of [['auto','自动：短表栏内，长表通栏'],['column','栏内整表（不可跨页）'],['full-width','通栏长表（可跨页）']]){const o=document.createElement('option');o.value=v;o.textContent=t;placement.append(o);}placement.value=b.placement||'auto';placement.onchange=()=>mutate(block=>block.placement=placement.value);panel.append(label('PDF 表格位置（编辑预览仅作参考）',placement));
       const data=document.createElement('textarea');data.rows=10;data.value=b.rows.map(r=>r.join('\t')).join('\n');data.id='tableData';data.spellcheck=false;
       panel.append(label('表格数据（Tab 分列，换行分行）',data));
       panel.append(button('应用表格数据',()=>{const rows=data.value.replace(/\r/g,'').split('\n').map(r=>r.split('\t'));if(rows.length>5000||rows.some(r=>r.length>50)){status('表格最多 5,000 行、50 列。',true);return;}const width=Math.max(...rows.map(r=>r.length));mutate(block=>block.rows=rows.map(r=>Array.from({length:width},(_,i)=>r[i]||'')));}));
@@ -43,7 +48,6 @@ export function setupAdvanced({getDoc,getSelected,change,insert,select,status,re
     for(const [i,n] of (getDoc().notes||[]).entries()){const area=document.createElement('textarea');area.rows=3;area.value=n.text;area.maxLength=30000;area.onchange=()=>change(()=>{getDoc().notes.find(x=>x.id===n.id).text=area.value;});dialog.append(label(`${i+1}　引用标记 [^${n.id}]`,area));}
     dialog.append(button('在当前段落插入注释',()=>{const b=active();if(!b||!['paragraph','heading'].includes(b.type)){status('请先选择正文或标题段落。',true);return;}const text=prompt('注释内容');if(!text)return;const id='n'+crypto.randomUUID().replaceAll('-','').slice(0,12),range=getSelectionRange(),offset=range?.id===b.id?range.end:b.text.length;change(()=>{getDoc().notes||=[];getDoc().notes.push({id,text});replaceBlockText(b,b.text.slice(0,offset)+`[^${id}]`+b.text.slice(offset));});dialog.close();notesDialog();}),button('关闭',()=>dialog.close()));dialog.showModal();}
   makeButton('注释',notesDialog);
-  const pdf=document.createElement('button');pdf.textContent='导出 PDF';pdf.className='primary';pdf.id='exportPdf';document.querySelector('.file-actions').append(pdf);
-  pdf.onclick=async()=>{pdf.disabled=true;status('正在使用 XeLaTeX 排版 PDF…');try{const response=await fetch('/api/export-pdf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(materializeReferences(getDoc()))});if(!response.ok){const error=await response.json();throw Error(error.error||'PDF 导出失败');}const warnings=JSON.parse(decodeURIComponent(response.headers.get('X-Layout-Warnings')||'%5B%5D'));const blob=await response.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=(getDoc().title||'文稿').replace(/[<>:"/\\|?*]/g,'_')+'.pdf';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);status('PDF 已生成并交给浏览器保存');if(warnings.length)alert('PDF 导出提示：\n'+warnings.join('\n'));}catch(e){status(e.message,true);}finally{pdf.disabled=false;}};
+  setupProofUI({getDoc,change,status});
   return {update};
 }
