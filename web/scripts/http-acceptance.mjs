@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+const origin=process.env.TEST_ORIGIN||'http://127.0.0.1:5173';
+if(!/^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(origin))throw Error('This test uses local mock auth only');
+const sign=await fetch(origin+'/signin-with-chatgpt?return_to=/',{redirect:'manual'});const cookie=sign.headers.getSetCookie().map(x=>x.split(';')[0]).join('; ');
+assert.ok(cookie,'local sign-in cookie');
+const call=async(name,args)=>{const r=await fetch(origin+'/mcp',{method:'POST',headers:{'content-type':'application/json',cookie},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name,arguments:args}})});const j=await r.json();if(j.result?.isError)throw Error(j.result.content[0].text);return j.result.structuredContent;};
+const id=process.argv[2]||'http-acceptance-'+Date.now();
+if(!process.argv[2])await call('create_project',{projectId:id,title:'HTTP 协议验收'});
+const before=await call('get_project',{projectId:id});
+const edited=await call('set_layout',{projectId:id,expectedRevision:before.revision,patch:{header:'Agent 已通过 HTTP 更新页眉',footer:'第 {page} 页'}});
+assert.equal(edited.revision,before.revision+1);
+await assert.rejects(()=>call('set_title',{projectId:id,expectedRevision:before.revision,title:'过期写入'}),/REVISION_CONFLICT/);
+const after=await call('get_project',{projectId:id});assert.equal(after.document.layout.header,'Agent 已通过 HTTP 更新页眉');
+assert.equal((await call('validate_project',{projectId:id})).valid,true);
+console.log(JSON.stringify({passed:true,projectId:id,revision:after.revision,checks:['real HTTP MCP','D1 + R2 persistence','revision conflict','document validation']}));

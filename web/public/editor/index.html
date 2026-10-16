@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>书页 · 在线排版工作台</title>
+    <link rel="stylesheet" href="style.css" /><link rel="stylesheet" href="vendor/katex/katex.min.css" />
+    <link rel="stylesheet" href="flow-layout.css" /><link rel="stylesheet" href="table-editor.css" /><link rel="stylesheet" href="workspace-tools.css" />
+    <link rel="stylesheet" href="ruby.css" /><link rel="stylesheet" href="web.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="back-library" href="/" title="返回项目库">← 项目库</a><div class="brand">
+        <span class="mark" aria-hidden="true">册</span>
+        <div>书页<small>在线排版工作台</small></div>
+      </div>
+      <input id="title" aria-label="文稿名称" maxlength="120" /><span
+        id="saveState"
+        role="status"
+        >浏览器草稿</span
+      >
+      <div class="file-actions">
+        <button id="open">打开文稿</button><button id="save">下载备份</button
+        ><button id="print" class="primary">打印 / PDF</button>
+      </div>
+    </header>
+    <nav class="toolbar" aria-label="编辑工具">
+      <div>
+        <button id="undo" title="撤销 Ctrl+Z">↶ 撤销</button
+        ><button id="redo" title="重做 Ctrl+Shift+Z">↷ 重做</button
+        ><span class="divider"></span><button id="addParagraph">＋ 正文</button
+        ><button id="addHeading">＋ 标题</button
+        ><button id="addBreak">插入分页</button
+        ><button id="addImage">插入图片</button>
+      </div>
+      <div>
+        <label class="check"
+          ><input id="guides" type="checkbox" checked />版心线</label
+        ><label
+          >缩放
+          <select id="zoom">
+            <option value="0.6">60%</option>
+            <option value="0.8" selected>80%</option>
+            <option value="1">100%</option>
+            <option value="1.2">120%</option>
+          </select></label
+        ><button id="help">使用说明</button>
+      </div>
+    </nav>
+    <main class="workspace">
+      <aside class="structure">
+        <div class="panel-heading">
+          <h2>文稿结构</h2>
+          <span id="blockCount"></span>
+        </div>
+        <div class="outline" id="outline"></div>
+        <div class="structure-bottom">
+          <button id="newDoc">新建空白文稿</button>
+          <p>点击“保存到云端”提交修改<br />JSON 工程可下载备份</p>
+        </div>
+      </aside>
+      <section class="canvas" aria-label="排版预览">
+        <div class="canvas-meta">
+          <span id="paperMeta"></span><span>单击纸面即可编辑</span>
+        </div>
+        <div id="pages"></div>
+      </section>
+      <aside class="inspector">
+        <div class="tabs" role="tablist">
+          <button id="tabLayout" role="tab" aria-selected="true">版式</button
+          ><button id="tabBlock" role="tab" aria-selected="false">
+            当前段落
+          </button>
+        </div>
+        <div id="layoutPanel" class="panel-body">
+          <h2>纸张与版心</h2>
+          <label
+            >开本<select id="preset">
+              <option value="book">图书 185 × 260 mm</option>
+              <option value="a4">A4 210 × 297 mm</option>
+              <option value="a5">A5 148 × 210 mm</option>
+              <option value="custom">自定义</option>
+            </select></label
+          >
+          <div class="field-grid">
+            <label
+              >宽度 / mm<input
+                data-layout="width"
+                type="number"
+                min="100"
+                max="320" /></label
+            ><label
+              >高度 / mm<input
+                data-layout="height"
+                type="number"
+                min="140"
+                max="450"
+            /></label>
+          </div>
+          <h3>页边距 / mm</h3>
+          <div class="field-grid">
+            <label
+              >上<input
+                data-layout="top"
+                type="number"
+                min="10"
+                max="70" /></label
+            ><label
+              >下<input
+                data-layout="bottom"
+                type="number"
+                min="10"
+                max="70" /></label
+            ><label
+              >内侧<input
+                data-layout="inner"
+                type="number"
+                min="10"
+                max="70" /></label
+            ><label
+              >外侧<input data-layout="outer" type="number" min="10" max="70"
+            /></label>
+          </div>
+          <p class="hint">内外边距随奇偶页镜像排列。</p>
+          <h3>正文</h3>
+          <div class="field-grid">
+            <label
+              >字号 / pt<input
+                data-layout="fontSize"
+                type="number"
+                min="8"
+                max="24"
+                step="0.5" /></label
+            ><label
+              >行高 / 倍<input
+                data-layout="lineHeight"
+                type="number"
+                min="1.1"
+                max="3"
+                step="0.1" /></label
+            ><label
+              >首行缩进 / 字<input
+                data-layout="indent"
+                type="number"
+                min="0"
+                max="4" /></label
+            ><label
+              >栏数<select data-layout="columns">
+                <option value="1">单栏</option>
+                <option value="2">双栏</option><option value="3">三栏</option><option value="4">四栏</option>
+              </select></label
+            ><label
+              >栏间距 / mm<input
+                data-layout="gap"
+                type="number"
+                min="3"
+                max="20"
+            /></label>
+          </div>
+          <h3>页眉与页码</h3>
+          <label>文字方向<select data-layout="writingMode"><option value="horizontal-tb">横排</option><option value="vertical-rl">竖排（从右向左）</option></select></label>
+          <label>页眉文字<input data-layout="header" maxlength="200" /></label
+          ><label
+            >偶数页页眉<input data-layout="headerEven" maxlength="200" /></label><label>页脚模板<input data-layout="footer" maxlength="200" /></label><label>偶数页页脚<input data-layout="footerEven" maxlength="200" /></label><label>孤行最少行数<select data-layout="widowLines"><option value="1">1 行</option><option value="2">2 行</option><option value="3">3 行</option></select></label><label>起始页码<input
+              data-layout="pageStart"
+              type="number"
+              min="1"
+              max="9999"
+          /></label>
+        </div>
+        <div id="blockPanel" class="panel-body" hidden>
+          <h2>编辑当前段落</h2>
+          <p id="emptySelection" class="hint">在纸面或左侧选择一个段落。</p>
+          <div id="blockFields" hidden>
+            <label
+              >类型<select id="blockType">
+                <option value="paragraph">正文</option>
+                <option value="heading">标题</option>
+                <option value="image">图片</option>
+                <option value="pageBreak">分页符</option><option value="table">表格</option><option value="equation">公式</option><option value="toc">目录</option><option value="index">索引</option>
+              </select></label
+            ><label id="textLabel"
+              >段落文字<textarea
+                id="blockText"
+                rows="8"
+                maxlength="300000"
+                placeholder="在这里输入文字"
+              ></textarea>
+            </label>
+            <div id="textOptions">
+              <label
+                >字体<select id="fontFamily">
+                  <option value="serif">宋体 / 衬线</option>
+                  <option value="sans">黑体 / 无衬线</option>
+                  <option value="kai">楷体</option>
+                </select></label
+              >
+              <div class="field-grid">
+                <label
+                  >字号 / pt<input
+                    id="blockSize"
+                    type="number"
+                    min="5"
+                    max="72"
+                    step="0.5"
+                    placeholder="跟随正文" /></label
+                ><label
+                  >对齐<select id="blockAlign">
+                    <option value="justify">两端对齐</option>
+                    <option value="left">左对齐</option>
+                    <option value="center">居中</option>
+                    <option value="right">右对齐</option>
+                  </select></label
+                >
+              </div>
+              <label class="check"
+                ><input id="blockBold" type="checkbox" />加粗整段</label
+              >
+            </div>
+            <label id="imageOptions" hidden
+              >图片宽度 / %<input
+                id="imageWidth"
+                type="range"
+                min="10"
+                max="100"
+            /></label>
+            <div class="block-actions">
+              <button id="moveUp">上移</button
+              ><button id="moveDown">下移</button
+              ><button id="deleteBlock" class="danger">删除段落</button>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </main>
+    <footer>
+      <span id="stats"></span><span id="status" role="status">就绪</span
+      ><span>云端工作台 · 0.4 · MCP</span>
+    </footer>
+    <input
+      id="fileInput"
+      type="file"
+      accept=".json,.txt,.fbd,.docx"
+      hidden
+    /><input
+      id="imageInput"
+      type="file"
+      accept="image/png,image/jpeg,image/webp"
+      hidden
+    />
+    <div id="measure" aria-hidden="true"></div>
+    <dialog id="helpDialog">
+      <h2>从文稿到成书</h2>
+      <p>
+        在纸面直接修改文字，离开段落后重新分页。右侧“当前段落”可修改整段文字与样式，适合编辑跨页长段。
+      </p>
+      <p>
+        “打开文稿”支持工程 JSON、纯文本、基础 Word 段落和有限的方正 FBD
+        注解。导入前请保存当前工程；未支持的内容会提示。
+      </p>
+      <p>
+        Ctrl+S 保存工程；纸面输入时使用系统撤销，离开编辑区后 Ctrl+Z /
+        Ctrl+Shift+Z 撤销、重做段落和版式操作。
+      </p>
+      <p>
+        打印时选相同纸张尺寸，比例 100%，关闭浏览器页眉页脚。浏览器提供“另存为
+        PDF”。这不是印刷 PDF/X 导出。
+      </p>
+      <p>
+        现已加入表格、数学公式、注释、目录索引和字符样式，但不保证 Word/FBD 完整还原；不支持方正飞翔原生格式与 PDF/X 印前输出。自动保存受浏览器存储容量限制，工程文件是可靠的备份。
+      </p>
+      <button id="closeHelp" class="primary">开始排版</button>
+    </dialog>
+    <script src="vendor/katex/katex.min.js"></script><script type="module" src="src/app.mjs"></script>
+  </body>
+</html>

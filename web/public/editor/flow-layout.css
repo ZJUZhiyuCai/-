@@ -1,0 +1,6 @@
+/* Shared preview/print geometry is set by applyFlowColumn/applyFlowPart. */
+.paper-column[data-writing-mode="vertical-rl"] { text-orientation:mixed; }
+.paper-column[data-writing-mode="vertical-rl"] .block { text-combine-upright:none; }
+.block[data-float-side] img { width:100%; }
+.block[data-flow-mode="vertical-rl"].paragraph { text-align:justify; }
+.block[data-flow-mode="vertical-rl"].image { text-align:center; }
