@@ -1,8 +1,9 @@
+import {sitePath} from './site-path.mjs';
 import {ProjectConnection,documentFingerprint} from './project-sync.mjs';
 import {confirmAction} from './dialogs.mjs';
 export async function setupCloud({getDoc,replaceDoc,status}){
  const actions=document.querySelector('.file-actions'),state=document.getElementById('saveState');
- const api=async(tool,args={})=>{const r=await fetch('/api/mcp-projects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tool,arguments:args})});const data=await r.json();if(!r.ok)throw Error(data.error||'云端请求失败');return data;};
+ const api=async(tool,args={})=>{const r=await fetch(sitePath('/api/mcp-projects'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tool,arguments:args})});const data=await r.json();if(!r.ok)throw Error(data.error||'云端请求失败');return data;};
  const connection=new ProjectConnection({api,getDoc,replaceDoc});let pending=false,ready=false;
  const button=(text,fn,parent=actions)=>{const b=document.createElement('button');b.textContent=text;b.onclick=async()=>{document.activeElement?.blur();b.disabled=true;try{await fn();}catch(e){status(e.message==='REVISION_CONFLICT'?'云端已有更新。当前修改已保留，请下载备份后重新打开工程，或另存为新工程。':e.message,true);}finally{b.disabled=false;}};parent.append(b);return b;};
  const save=button('保存到云端',async()=>{if(pending)return;pending=true;try{if(!connection.projectId){const id='book-'+crypto.randomUUID();await api('create_project',{projectId:id,document:getDoc()});await connection.open(id);history.replaceState(null,'','?project='+id);ready=true;}else await connection.save();localStorage.removeItem('shuye-draft-'+connection.projectId);state.textContent='云端已保存 · r'+connection.revision;status('工程已保存到云端，可在其他设备或 MCP 中读取');}finally{pending=false;}});save.className='primary';

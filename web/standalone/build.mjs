@@ -1,0 +1,11 @@
+import {build} from 'esbuild';
+import {mkdir,cp,readFile,writeFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+const out=resolve(process.argv[2]||'.sites-runtime/standalone');
+await mkdir(out,{recursive:true});await cp('public',out+'/public',{recursive:true});
+await build({entryPoints:['standalone/dashboard.tsx'],outfile:out+'/public/dashboard.js',bundle:true,minify:true,format:'esm',platform:'browser',jsx:'automatic',define:{'process.env.NODE_ENV':'"production"'}});
+const css=(await readFile('app/globals.css','utf8')).replace('@import "tailwindcss";','');
+await writeFile(out+'/public/dashboard.css',css+'\n.auth-card{max-width:620px;margin:8vh auto;background:white;border:1px solid #dfe6e5;border-radius:12px;padding:36px}.auth-card form{display:grid;gap:16px;margin:22px 0}.auth-card label{display:grid;gap:8px}.auth-card pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#e8f0eb;padding:18px}.auth-card h1{margin-top:24px}');
+await build({entryPoints:['standalone/server.mjs'],outfile:out+'/server.mjs',bundle:true,format:'esm',platform:'node',target:'node22',banner:{js:"import {createRequire} from 'node:module';const require=createRequire(import.meta.url);"},plugins:[{name:'wasm',setup(b){b.onLoad({filter:/\.wasm$/},async({path})=>({contents:`export default new WebAssembly.Module(Uint8Array.from(atob(${JSON.stringify((await readFile(path)).toString('base64'))}),c=>c.charCodeAt(0)));`,loader:'js'}));}}]});
+await cp('LICENSE',out+'/LICENSE');await cp('THIRD_PARTY_NOTICES.md',out+'/THIRD_PARTY_NOTICES.md');await cp('vendor',out+'/vendor',{recursive:true});
+console.log(out);

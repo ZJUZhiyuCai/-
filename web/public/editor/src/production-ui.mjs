@@ -1,3 +1,4 @@
+import {sitePath} from './site-path.mjs';
 import {materializeReferences} from './references.mjs';
 export function setupProduction({getDoc,status}){
   const dialog=document.createElement('dialog');dialog.className='workspace-dialog';document.body.append(dialog);
@@ -24,7 +25,7 @@ export function setupProduction({getDoc,status}){
       const request={options};
       if(source.value==='doc')request.doc=materializeReferences(getDoc());else{const f=file.files[0];if(!f)throw Error('请先选择 PDF。');if(f.size>14*1024*1024)throw Error('当前入口单个 PDF 限 14 MB。');request.pdf=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result.split(',')[1]);r.onerror=()=>reject(Error('PDF 读取失败'));r.readAsDataURL(f);});}
       report.textContent='正在排版与预检…';status('正在生成出版输出…');
-      const response=await fetch('/api/production',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request)}),result=await response.json();if(!response.ok)throw Error(result.error||'出版输出失败');
+      const response=await fetch(sitePath('/api/production'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request)}),result=await response.json();if(!response.ok)throw Error(result.error||'出版输出失败');
       report.textContent=JSON.stringify(result.report,null,2);
       const bytes=Uint8Array.from(atob(result.pdf),c=>c.charCodeAt(0)),url=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'})),a=document.createElement('a');a.href=url;a.download=(getDoc().title||'文稿').replace(/[<>:"/\\|?*]/g,'_')+(options.booklet?'_骑马订':'_出版输出')+'.pdf';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);status('出版 PDF 已生成，请阅读预检报告');
     }catch(e){report.textContent=e.message;status(e.message,true);}finally{exportButton.disabled=false;}};

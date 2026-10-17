@@ -1,3 +1,4 @@
+import {sitePath} from './site-path.mjs';
 // Native source stays in this dialog's memory. Only explicit edits are sent to
 // the authenticated stateless API; downloading never overwrites the input file.
 export function setupNativeEditor(){
@@ -11,7 +12,7 @@ export function setupNativeEditor(){
   const button=(parent,title,fn)=>{const b=document.createElement('button');b.textContent=title;b.onclick=async()=>{b.disabled=true;try{await fn();}catch(e){status.textContent=({PDML_NATIVE_ANCHOR_LENGTH_CHANGE_UNVERIFIED:'当前修改会改变原生锚点边界，尚不能安全写回；请使用等字符边界替换。',PDML_SOURCE_CONFLICT:'原文已变化，请重新读取后修改。',PDML_EDIT_IN_PROGRESS:'正在处理上一项修改，请稍后再试。'}[e.message]||e.message);}finally{b.disabled=false;}};parent.append(b);return b;};
   const input=document.createElement('input');input.type='file';input.accept='.pdml,.xml';input.hidden=true;dialog.append(input);
   let busy=false;let xml='',sourceHash='',filename='edited.pdml',offset=0,current;
-  const api=async(tool,args)=>{const r=await fetch('/api/mcp-projects',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({tool,arguments:args})}),j=await r.json();if(!r.ok)throw Error(j.error||'请求失败');return j;};
+  const api=async(tool,args)=>{const r=await fetch(sitePath('/api/mcp-projects'),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({tool,arguments:args})}),j=await r.json();if(!r.ok)throw Error(j.error||'请求失败');return j;};
   const edit=async operations=>{if(busy)throw Error('PDML_EDIT_IN_PROGRESS');busy=true;try{const expectedHash=sourceHash,next=await api('edit_founder_pdml',{xml,expectedHash,operations});if(sourceHash!==expectedHash)throw Error('PDML_SOURCE_CONFLICT');xml=next.xml;sourceHash=next.sourceHash;await show();status.textContent=`已修改 ${next.patchCount} 处；其余原文保留，请下载保存。`;}finally{busy=false;}};
   async function show(){current=await api('open_founder_pdml',{xml,offset,limit:10});sourceHash=current.sourceHash;content.replaceChildren();const summary=document.createElement('p');summary.textContent=`文章 ${current.totals.articles} · 对象 ${current.totals.objects} · 源哈希 ${sourceHash.slice(0,12)} · 当前从第 ${offset+1} 项开始`;content.append(summary);
    for(const article of current.articles){const details=document.createElement('details'),title=document.createElement('summary');title.textContent='文章 '+article.uid;details.append(title);content.append(details);

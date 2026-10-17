@@ -1,7 +1,8 @@
+import {sitePath} from './site-path.mjs';
 import {ProjectConnection} from './project-sync.mjs';
 export function setupMcpProjects({getDoc,replaceDoc,status}){
   const button=document.createElement('button');button.textContent='MCP 工程';document.querySelector('.file-actions').append(button);
-  const api=async(tool,args={})=>{const response=await fetch('/api/mcp-projects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tool,arguments:args})});const result=await response.json();if(!response.ok||result.error)throw Error(result.error||'MCP 工程服务失败');return result;};
+  const api=async(tool,args={})=>{const response=await fetch(sitePath('/api/mcp-projects'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tool,arguments:args})});const result=await response.json();if(!response.ok||result.error)throw Error(result.error||'MCP 工程服务失败');return result;};
   const connection=new ProjectConnection({api,getDoc,replaceDoc});
   const updateLabel=()=>button.textContent=connection.projectId?`MCP · ${connection.projectId} r${connection.revision}`:'MCP 工程';
   const load=async projectId=>{await connection.open(projectId);updateLabel();};
