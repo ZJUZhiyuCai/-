@@ -51,6 +51,7 @@ function status(message, error = false) {
   $("status").classList.toggle("error", error);
 }
 function persist() {
+  document.dispatchEvent(new Event('shuye:document-changed'));
   if (protectAutosave) {
     $("saveState").textContent = "原自动保存已保留，请另存工程";
     return;
@@ -550,6 +551,7 @@ $("fileInput").onchange = async (e) => {
     status("文稿超过导入限制（工程 100 MB，其他 20 MB），请分卷处理。", true);
     return;
   }
+  let replacementStarted=false;
   try {
     let imported,
       warnings = [];
@@ -593,6 +595,7 @@ $("fileInput").onchange = async (e) => {
     if (!confirm(`打开“${f.name}”并替换当前文稿？当前文稿可通过撤销恢复。`))
       return;
     await change(() => {
+      replacementStarted=true;
       doc = imported;
       selected = doc.blocks[0]?.id;
     });
@@ -602,8 +605,16 @@ $("fileInput").onchange = async (e) => {
     } else status("文稿已导入");
   } catch (err) {
     status(err.message, true);
+    if (extnameIsDocx(f.name)) {
+      const d=document.createElement('dialog');d.className='workspace-dialog';
+      const h=document.createElement('h2');h.textContent=replacementStarted?'导入后显示失败 · 可撤销恢复原稿':'导入未完成 · 当前文稿未替换';
+      const details=document.createElement('pre');details.style.whiteSpace='pre-wrap';details.textContent=err.message;
+      const close=document.createElement('button');close.textContent=replacementStarted?'关闭并检查文稿':'保留原稿并关闭';close.onclick=()=>d.close();
+      d.append(h,details,close);d.onclose=()=>d.remove();document.body.append(d);d.showModal();
+    }
   }
 };
+function extnameIsDocx(name){return /\.docx$/i.test(name);}
 $("addImage").onclick = () => $("imageInput").click();
 $("imageInput").onchange = async (e) => {
   const f = e.target.files[0];

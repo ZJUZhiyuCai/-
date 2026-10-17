@@ -2,11 +2,13 @@ import {createCmykConverter} from './icc.mjs';
 import {embedPrintImage} from './print-image.mjs';
 import {setPrintOutputIntent} from './pdfx.mjs';
 import {createPdfInk} from './pdf-ink.mjs';
-import {PDFDocument,PDFName,PDFDict,cmyk,pushGraphicsState,popGraphicsState,concatTransformationMatrix,rectangle,fill,beginText,endText,setFontAndSize,setTextMatrix,showText,setGraphicsState,drawObject} from 'pdf-lib';
-import fontkit from '@pdf-lib/fontkit';
+import {PDFDocument,PDFName,PDFDict,decodePDFRawStream,cmyk,pushGraphicsState,popGraphicsState,concatTransformationMatrix,rectangle,fill,beginText,endText,setFontAndSize,setTextMatrix,showText,setGraphicsState,drawObject} from 'pdf-lib';
+import fontkit from './print-fontkit.mjs';
 import {checkDocument} from './operations.mjs';
 import {pageObjects,compositionRichText,flowStory} from '../public/editor/src/composition.mjs';
+import {documentFingerprint} from '../public/editor/src/project-sync.mjs';
 const pt=72/25.4;
+const sha256=async bytes=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
 export const printLimitations=['PDF/X-4 为受限输出配置；完整 ISO 合规认证仍需独立专业预检','支持衬线、无衬线和楷体独立字体；缺少所用字体时拒绝输出','仅输出自由版面；正文顺序流须另行排入框','图片上限 200 万像素；支持 PNG、RGB/CMYK JPEG；CMYK 图像转换需要源 ICC，不支持 WebP','未标记 RGB 图像按 sRGB 解释；屏幕专色为近似显示，未提供 ICC 软打样'];
 export function bookletOrder(count){if(!Number.isInteger(count)||count<1||count>1000)throw Error('PAGE_COUNT');const total=Math.ceil(count/4)*4,pairs=[];for(let i=0;i<total/4;i++){pairs.push([total-1-i*2,i*2],[i*2+1,total-2-i*2]);}return pairs.map(pair=>pair.map(i=>i<count?i:null));}
 export async function exportCompositionPdf(raw,fontBytes,options={}){
@@ -17,6 +19,8 @@ export async function exportCompositionPdf(raw,fontBytes,options={}){
 }
 async function exportPdf(raw,fontBytes,options,converter){
  const doc=checkDocument(raw);if(!doc.composition)throw Error('需要自由版面工程');
+ const bodyBlocks=doc.blocks.filter(b=>b.type!=='pageBreak');
+ if((bodyBlocks.length||doc.notes.length||doc.bibliography.length)&&options.acknowledgeBodyOmission!==true)throw Error('BODY_NOT_IN_COMPOSITION: 正文、注释或文献尚未排入自由版面；此出口不会输出这些内容。请使用正文浏览器校样，或明确确认仅输出自由版面。');
  if(!(fontBytes instanceof Uint8Array)||fontBytes.length<32||fontBytes.length>20*1024*1024)throw Error('字体文件须为有效 TTF/OTF，且不超过 20 MB');
  const bleed=options.bleedMm??3;if(!Number.isFinite(bleed)||bleed<0||bleed>20)throw Error('出血范围 0–20 mm');
  const mark=options.cropMarks===true?6:0,margin=bleed+mark,c=doc.composition;
@@ -36,9 +40,14 @@ async function exportPdf(raw,fontBytes,options,converter){
  const measure=(text,f)=>(fontEntries.get(f.fontFamily||'serif')||fontEntries.get('serif')).font.widthOfTextAtSize(text,f.fontSize||11);
  for(const s of c.stories){checkText(s.text,s.id);const r=flowStory(s,s.frameIds.map(id=>frames.get(id)),measure);r.runs.forEach(r=>runs.set(r.frameId,r));if(r.overset)diagnostics.push({code:'OVERSET',id:s.id,characters:[...r.overset].length});}
  const pages=c.pages.map((p,i)=>({id:p.id,objects:pageObjects(c,p.id).map(o=>{if(o.type==='text'){const rich=compositionRichText(doc,p.id,o.text||'',o.spans),text=rich.text;checkText(text,o.id);const r=runs.get(o.id)||flowStory(rich,[o],measure).runs[0];if(!runs.has(o.id)&&r.end<text.length)diagnostics.push({code:'OVERSET',id:o.id});for(const segment of r.lines.flatMap(l=>l.segments)){const resource=fontEntries.get(segment.style.fontFamily);if(!resource){diagnostics.push({code:'FONT_RESOURCE_MISSING',id:o.id,family:segment.style.fontFamily});continue;}for(const char of segment.text)if(!resource.supported.has(char.codePointAt(0)))diagnostics.push({code:'MISSING_GLYPH',id:o.id,character:char});}return {...o,run:r};}if(o.type==='image'&&o.src.startsWith('data:image/webp'))diagnostics.push({code:'WEBP_UNSUPPORTED',id:o.id});return o;})}));
+ if(!pages.some(p=>p.objects.some(o=>o.type==='image'||o.fill||o.type==='text'&&o.run.lines.some(l=>l.segments.some(s=>s.text.trim())))))diagnostics.push({code:'EMPTY_COMPOSITION'});
  if(diagnostics.length){const error=Error('PRINT_PREFLIGHT_FAILED: '+JSON.stringify(diagnostics.slice(0,30)));error.diagnostics=diagnostics;throw error;}
  const width=doc.layout.width*pt,height=doc.layout.height*pt,m=margin*pt,b=bleed*pt;
  const report={pages:pages.length,trimMm:[doc.layout.width,doc.layout.height],bleedMm:bleed,fontName:parsed.postscriptName||'embedded',fontResources:[...fontEntries].map(([family,f])=>({family,name:f.parsed.postscriptName})),fontsEmbedded:true,colorSpace:'',pdfX:false,overprintObjects:[],limitations:printLimitations,images:[]};
+ report.scope={kind:'composition-only',omittedBodyBlocks:bodyBlocks.length,omittedBodyNotes:doc.notes.length,omittedBibliography:doc.bibliography.length,bodyOmissionAcknowledged:options.acknowledgeBodyOmission===true};
+ report.productionReady=false;
+ report.status='INCOMPLETE';
+ report.sourceSha256=await sha256(new TextEncoder().encode(documentFingerprint(doc)));
  for(const p of pages){const page=pdf.addPage([width+2*m,height+2*m]);page.setTrimBox(m,m,width,height);page.setBleedBox(m-b,m-b,width+2*b,height+2*b);const fontKeys=new Map([...fontEntries].map(([family,f])=>[family,page.node.newFontDictionary('ShuyeFont',f.font.ref)]));
   for(const o of p.objects){const w=o.width*pt,h=o.height*pt,rad=(o.rotation||0)*Math.PI/180,cos=Math.cos(rad),sin=Math.sin(rad),cx=m+(o.x+o.width/2)*pt,cy=m+height-(o.y+o.height/2)*pt;
    // CSS rotates clockwise in top-left coordinates; PDF uses bottom-left coordinates.
@@ -59,7 +68,15 @@ async function exportPdf(raw,fontBytes,options,converter){
   const streamRef=descriptor.get(PDFName.of('FontFile3'))||descriptor.get(PDFName.of('FontFile2'));
   descriptor.delete(PDFName.of('FontFile2'));descriptor.set(PDFName.of('FontFile3'),streamRef);
   descendant.set(PDFName.of('Subtype'),PDFName.of('CIDFontType0'));
-  pdf.context.lookup(streamRef).dict.set(PDFName.of('Subtype'),PDFName.of(subset?'CIDFontType0C':'OpenType'));
+  if(subset){
+   // @pdf-lib/fontkit 1.1.1 writes CFF table length into header offSize.
+   // CFF 1.0 requires 1..4, independent of each INDEX's own offSize. A valid
+   // PDF FontFile3 alone does not make those embedded font bytes readable.
+   const data=Uint8Array.from(decodePDFRawStream(pdf.context.lookup(streamRef)).decode());
+   if(data.length<4||data[0]!==1||data[2]<4||data[2]>data.length)throw Error('CFF_SUBSET_HEADER_INVALID');
+   data[3]=4;
+   pdf.context.assign(streamRef,pdf.context.flateStream(data,{Subtype:'CIDFontType0C'}));
+  }else pdf.context.lookup(streamRef).dict.set(PDFName.of('Subtype'),PDFName.of('OpenType'));
   descendant.delete(PDFName.of('CIDToGIDMap'));
  }
  Object.assign(report,ink.report());report.colorSpace=report.colorSpaces.join(' + ');
@@ -71,5 +88,7 @@ async function exportPdf(raw,fontBytes,options,converter){
  // restricted writer uses only PDF 1.6 features; equal-length header replacement
  // preserves every xref byte offset and is checked by an independent parser.
  if(options.pdfX){if(new TextDecoder().decode(bytes.subarray(0,8))!=='%PDF-1.7')throw Error('PDF_HEADER_UNEXPECTED');bytes[7]=54;}
- if(bytes.length>24*1024*1024)throw Error('PDF 超过 24 MB，请分卷');return {bytes,report};
+ if(bytes.length>24*1024*1024)throw Error('PDF 超过 24 MB，请分卷');
+ report.pdfSha256=await sha256(bytes);
+ return {bytes,report};
 }

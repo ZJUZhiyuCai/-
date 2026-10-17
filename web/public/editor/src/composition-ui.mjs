@@ -2,6 +2,7 @@ import {mergeCells,splitCell,resizeTable} from './table-layout.mjs';
 import {paginateStory} from './auto-flow.mjs';
 import {rebaseTextSpans} from './frame-flow.mjs';
 import {previewInk} from './ink.mjs';
+import {confirmAction} from './dialogs.mjs';
 import {emptyComposition,applyCompositionOperation,pageObjects,masterObjects,pageContext,compositionRichText,flowStory} from './composition.mjs';
 export const fonts={serif:'"SimSun","Songti SC",serif',sans:'"Microsoft YaHei",sans-serif',kai:'"KaiTi",serif'};
 const mm=96/25.4;
@@ -44,7 +45,7 @@ export function setupComposition({getDoc,change,refresh,status}) {
  const current=()=>masterId?getDoc().composition.masters.find(m=>m.id===masterId):getDoc().composition.pages.find(p=>p.id===pageId);
  const frame=()=>current()?.objects.find(o=>o.id===selected);
  const patch=values=>{const f=frame();if(f)return run({op:'upsert_frame',...owner(),frame:{...f,...values}});};
- mode.onclick=async()=>{const next=!enabled;if(!getDoc().composition)await run({op:'set_composition',composition:emptyComposition()});enabled=next;refresh();};
+ mode.onclick=async()=>{const next=!enabled;if(!getDoc().composition){if(getDoc().blocks.length&&!await confirmAction('自由版面是独立的图文框画布，当前正文不会自动转入。正文仍保留，可随时返回；自由版面 PDF 不包含这些正文。创建空白画布？'))return;if(await run({op:'set_composition',composition:emptyComposition()})===false)return;}enabled=next;refresh();};
  function richInspector(s){
   if(!s.blocks){button(panel,'启用表格与注释文字流',()=>run({op:'upsert_story',story:{...s,text:'',spans:[],blocks:[{id:'b-'+crypto.randomUUID(),type:'paragraph',text:s.text,spans:s.spans||[]}],notes:[]}}));return;}
   const title=document.createElement('h3');title.textContent='结构文字流 · 段落、表格与注释';panel.append(title);
