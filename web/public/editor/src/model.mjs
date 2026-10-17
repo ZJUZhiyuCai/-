@@ -1,4 +1,5 @@
 import { validateTable } from './table-layout.mjs';
+import {validateComposition} from './composition.mjs';
 import { validateRuby,adjustRubyOnEdit } from './ruby.mjs';
 export const uid = () => globalThis.crypto.randomUUID();
 export const defaults = {
@@ -34,10 +35,10 @@ export function validateDocument(raw) {
   if (
     !raw ||
     raw.format !== "open-typesetter" ||
-    ![1, 2].includes(raw.version) ||
+    ![1, 2, 3].includes(raw.version) ||
     !Array.isArray(raw.blocks)
   )
-    throw Error("不是受支持的书页工程（支持 version 1 / 2）。");
+    throw Error("不是受支持的书页工程（支持 version 1 / 2 / 3）。");
   if (raw.blocks.length > 10000)
     throw Error("文档超过 10,000 个段落，请分卷处理。");
   const layout = { ...defaults };
@@ -141,7 +142,8 @@ export function validateDocument(raw) {
   });
   return {
     format: "open-typesetter",
-    version: 2,
+    version: raw.composition ? 3 : 2,
+    ...(raw.composition ? {composition:validateComposition(raw.composition)} : {}),
     title: String(raw.title || "未命名文稿").slice(0, 120),
     layout,
     blocks,

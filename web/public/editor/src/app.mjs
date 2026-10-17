@@ -22,6 +22,9 @@ import {setupCloud} from './cloud-ui.mjs';
 import {setupReview} from './review-ui.mjs';
 import {makeTemplate} from './templates.mjs';
 import {importDocx} from './docx-web.mjs';
+import {setupComposition} from './composition-ui.mjs';
+import {setupPrintExport} from './print-ui.mjs';
+import {setupNativeEditor} from './native-ui.mjs';
 const $ = (id) => document.getElementById(id),
   storageKey = "shuye-web-"+(new URLSearchParams(location.search).get("project")||"sample"),
   history = new History();
@@ -32,7 +35,7 @@ let doc = makeTemplate("book","文字的秩序"),
   editingSnapshot = null,
   renderVersion = 0,
   lastPages = [];
-let advancedUI, selectionRange=null;
+let advancedUI, compositionUI, selectionRange=null;
 let startupWarning = "",
   protectAutosave = false;
 try {
@@ -160,6 +163,7 @@ function outline() {
 async function render() {
   const version = ++renderVersion;
   await document.fonts.ready;
+  if(compositionUI){const plan=compositionUI.render($('pages'),zoom);if(plan){$('paperMeta').textContent=`自由版面 · ${plan.pages.length} 页`;$('stats').textContent=`${doc.composition.stories.length} 个文字流`;$('layoutWarnings')?.remove();status(plan.warnings.length?plan.warnings.map(w=>w.message).join('；'):'自由版面已更新',!!plan.warnings.length);return;}}
   await Promise.all(
     doc.blocks
       .filter((b) => b.type === "image")
@@ -550,6 +554,7 @@ $("fileInput").onchange = async (e) => {
     let imported,
       warnings = [];
     const ext = f.name.split(".").pop().toLowerCase();
+    if(['ffx','ffxb','ftpx','fxpkg','pdml','xml'].includes(ext))throw Error('飞翔原生/PDML/XML 格式尚未完成兼容验收。请保留原文件；当前不能作为书页工程导入。');
     const title = f.name.replace(/\.[^.]+$/, "");
     if (ext === "json") {
       imported = validateDocument(JSON.parse(await f.text()));
@@ -664,6 +669,9 @@ setupEditorTools({getDoc:()=>doc,getSelected:()=>selected,change,select:choose,s
 setupTableEditor({getDoc:()=>doc,getSelected:()=>selected,change,status});
 setupWorkspaceTools({getDoc:()=>doc,getSelected:()=>selected,change,select:choose,status,getSelectionRange:()=>selectionRange,replaceDoc:next=>change(()=>{doc=next;selected=doc.blocks[0]?.id;})});
 setupReview({getDoc:()=>doc,getSelected:()=>selected,change,status});
+compositionUI=setupComposition({getDoc:()=>doc,change,refresh,status});
+setupPrintExport({getDoc:()=>doc,status});
+setupNativeEditor();
 
 setupRubyEditor({getDoc:()=>doc,getSelected:()=>selected,getSelectionRange:()=>selectionRange,change,status});
 await refresh();

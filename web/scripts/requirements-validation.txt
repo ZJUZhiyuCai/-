@@ -1,0 +1,5 @@
+# Tested independent validation environment; no runtime application dependency.
+pypdf==6.9.1
+Pillow==12.2.0
+fonttools==4.60.1
+pdfplumber==0.11.9

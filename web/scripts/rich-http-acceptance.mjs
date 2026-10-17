@@ -1,0 +1,28 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile} from 'node:fs/promises';
+import {richFixture} from '../tests/fixtures/rich-composition.mjs';
+const origin=process.env.TEST_ORIGIN||'http://127.0.0.1:5173';
+if(!/^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(origin))throw Error('Local acceptance only');
+const sign=await fetch(origin+'/signin-with-chatgpt?return_to=/',{redirect:'manual'}),cookie=sign.headers.getSetCookie().map(x=>x.split(';')[0]).join('; '),identity=process.env.TEST_WORKER_DIRECT==='1'?{'oai-authenticated-user-id':'local-acceptance'}:{};
+const call=async(name,args)=>{const r=await fetch(origin+'/mcp',{method:'POST',headers:{'content-type':'application/json',cookie,...identity},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name,arguments:args}})}),j=await r.json();if(j.result?.isError)throw Error(j.result.content[0].text);if(!j.result?.structuredContent)throw Error(JSON.stringify(j));return j.result.structuredContent;};
+const projectId='rich-acceptance-'+Date.now(),fontBase64=(await readFile(process.argv[2])).toString('base64'),iccBase64=(await readFile(process.argv[3])).toString('base64');
+await call('create_project',{projectId,document:{format:'open-typesetter',version:3,title:'跨页表格与注释验收',blocks:[],composition:richFixture()}});
+await assert.rejects(()=>call('export_composition_pdf',{projectId,expectedRevision:1,fontBase64}),/OVERSET/);
+const dry=await call('paginate_story',{projectId,expectedRevision:1,storyId:'s',templateFrameId:'f',fontBase64,dryRun:true});assert.ok(dry.document.composition.pages.length>5);assert.equal((await call('get_project',{projectId})).revision,1);
+await assert.rejects(()=>call('paginate_story',{projectId,expectedRevision:1,storyId:'s',templateFrameId:'f',fontBase64,maxNewPages:1}),/PAGE_LIMIT/);
+const paginated=await call('paginate_story',{projectId,expectedRevision:1,storyId:'s',templateFrameId:'f',fontBase64});assert.equal(paginated.revision,2);
+await call('story_table_set_cell',{projectId,expectedRevision:2,storyId:'s',blockId:'table',row:2,col:2,text:'已更新'});
+await assert.rejects(()=>call('story_table_merge',{projectId,expectedRevision:3,storyId:'s',blockId:'table',range:{row:5,col:0,rowspan:2,colspan:1}}),/合并/);
+await assert.rejects(()=>call('story_table_set_cell',{projectId,expectedRevision:2,storyId:'s',blockId:'table',row:2,col:2,text:'旧修订'}),/CONFLICT/);
+await assert.rejects(()=>call('story_update_note',{projectId,expectedRevision:3,storyId:'s',noteId:'intro-note',text:'[^missing]'}),/RICH_NOTE/);
+await call('restore_version',{projectId,expectedRevision:3,revision:2});assert.deepEqual((await call('get_project',{projectId})).document.composition,paginated.document.composition);
+const output=await call('export_composition_pdf',{projectId,expectedRevision:4,fontBase64,iccBase64,pdfX:true});const bytes=Buffer.from(output.base64,'base64');await writeFile('.sites-runtime/rich-http-acceptance.pdf',bytes);
+// Original minimal native XML: verify actual transport, source conflict and roundtrip.
+const xml='<?xml version="1.0" encoding="UTF-8"?><docRoot xmlns="http://www.founder.com/PDMLSchema/2009/main"><spreads><spread uid="sp"><textItem uid="f" parentArticle="a"><oPr><basicObjFmt xPos="50" yPos="50" width="60" height="40"/></oPr></textItem><page uid="p" pageRect="(0,0,185,260)"/></spread></spreads><article uid="a"><p><r><t>原文验收</t></r></p></article></docRoot>';
+await writeFile('.sites-runtime/native-browser-fixture.pdml',xml);
+const session=await call('open_founder_pdml',{xml}),modified=await call('edit_founder_pdml',{xml,expectedHash:session.sourceHash,operations:[{op:'replace_text',articleId:'a',paragraphIndex:0,textIndex:0,expectedText:'原文验收',text:'修改验收'}]});assert.equal(modified.xml,xml.replace('原文验收','修改验收'));
+await assert.rejects(()=>call('edit_founder_pdml',{xml:modified.xml,expectedHash:session.sourceHash,operations:[]}),/SOURCE_CONFLICT/);
+const imported=await call('import_founder_pdml_composition',{xml});imported.composition.pages[0].objects[0].x+=2;
+const exported=await call('export_founder_pdml_composition',{xml,expectedHash:session.sourceHash,composition:imported.composition});assert.equal(exported.xml,xml.replace('xPos="50"','xPos="52"'));
+const result={passed:true,projectId,revision:4,pages:output.report.pages,bytes:bytes.length,url:origin+'/editor/index.html?project='+projectId,checks:['overset blocks export','font-measured automatic pagination','dryRun leaves revision unchanged','bounded pagination rollback','table edit via MCP','merge overlap/old revision/dangling note rejection','restore preserves all rich content','real PDF export','PDML text write and conflict','PDML composition geometry roundtrip'],pdfXIndependentCertification:output.report.pdfXIndependentCertification};
+await writeFile('.sites-runtime/rich-http-result.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result));

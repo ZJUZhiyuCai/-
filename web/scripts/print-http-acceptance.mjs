@@ -1,0 +1,13 @@
+import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
+import assert from 'node:assert/strict';
+const origin=process.env.TEST_ORIGIN||'http://127.0.0.1:5173';
+if(!/^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(origin))throw Error('Local acceptance only');
+const sign=await fetch(origin+'/signin-with-chatgpt?return_to=/',{redirect:'manual'}),cookie=sign.headers.getSetCookie().map(x=>x.split(';')[0]).join('; '),identity=process.env.TEST_WORKER_DIRECT==='1'?{'oai-authenticated-user-id':'local-acceptance'}:{};
+const call=async(name,args)=>{const r=await fetch(origin+'/api/mcp-projects',{method:'POST',headers:{'content-type':'application/json',cookie,...identity},body:JSON.stringify({tool:name,arguments:args})}),j=await r.json();if(!r.ok)throw Error(j.error);return j;};
+const fontPath=process.argv[2];if(!fontPath)throw Error('Pass the path to a licensed TTF/OTF font');const fontBase64=readFileSync(fontPath).toString('base64');
+const projectId='print-acceptance-'+Date.now();
+const r=await call('create_project',{projectId,document:{format:'open-typesetter',version:3,title:'图书排版测试',blocks:[],composition:{masters:[],stories:[],pages:[{id:'p1',objects:[{id:'f1',type:'text',x:20,y:30,width:120,height:40,text:'图书排版测试 ABC 123',fontSize:12}],overrides:[]}]}}});
+const out=await call('export_composition_pdf',{projectId,expectedRevision:r.revision,fontBase64,cropMarks:true,bleedMm:3});
+assert.equal(out.report.fontsEmbedded,true);assert.equal(out.report.pdfX,false);const bytes=Buffer.from(out.base64,'base64');assert.equal(bytes.subarray(0,5).toString(),'%PDF-');mkdirSync('.sites-runtime',{recursive:true});writeFileSync('.sites-runtime/worker-print-acceptance.pdf',bytes);
+await assert.rejects(()=>call('export_composition_pdf',{projectId,expectedRevision:99,fontBase64}),/REVISION_CONFLICT/);
+console.log(JSON.stringify({passed:true,projectId,bytes:bytes.length,font:out.report.fontName,environment:process.env.TEST_WORKER_DIRECT==='1'?'local production Worker with dispatch identity stub':'development mock sign-in',checks:['PDF generation through HTTP','embedded font','expected revision guard'],file:'.sites-runtime/worker-print-acceptance.pdf'}));

@@ -57,3 +57,7 @@ next-env.d.ts
 
 /.npm-cache/
 /*.tar.gz
+
+# Local Python validation caches
+__pycache__/
+*.py[cod]

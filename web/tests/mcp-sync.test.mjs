@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {ProjectConnection} from '../public/editor/src/project-sync.mjs';
+import {ProjectConnection,documentFingerprint} from '../public/editor/src/project-sync.mjs';
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
+test('server schema property ordering does not mark saved frames as dirty',async()=>{let doc;const remote={composition:{pages:[{id:'p1',objects:[{id:'f1',x:20,rotation:15,src:'data:image/png;base64,AAAA'}]}]}};const c=new ProjectConnection({api:async()=>({revision:1,document:remote}),getDoc:()=>doc,replaceDoc:async()=>{doc={composition:{pages:[{objects:[{src:'data:image/png;base64,AAAA',rotation:15,x:20,id:'f1'}],id:'p1'}]}};}});await c.open('book');assert.equal(c.dirty,false);assert.equal(documentFingerprint(doc),documentFingerprint(remote));doc.composition.pages[0].objects[0].x=21;assert.equal(c.dirty,true);assert.notEqual(documentFingerprint({pages:[1,2]}),documentFingerprint({pages:[2,1]}));});
 test('browser follows agent revisions but stops when there are local edits',async()=>{
   let doc={text:'old'},remote={revision:1,document:{text:'saved'}};const c=new ProjectConnection({api:async()=>structuredClone(remote),getDoc:()=>doc,replaceDoc:async d=>{doc=d;}});
   await c.open('book');remote={revision:2,document:{text:'agent'}};assert.equal(await c.poll(),true);assert.equal(doc.text,'agent');doc.text='local';remote={revision:3,document:{text:'other'}};assert.equal(await c.poll(),false);assert.equal(doc.text,'local');

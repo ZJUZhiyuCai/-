@@ -1,0 +1,64 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {validateComposition,pageObjects,masterObjects,pageContext,compositionText,flowStory,applyCompositionOperation} from '../public/editor/src/composition.mjs';
+import {applyOperations,checkDocument} from '../lib/operations.mjs';
+export const compositionFixture=()=>({pages:[{id:'p1',masterId:'m1',objects:[{id:'f1',type:'text',x:20,y:30,width:60,height:25,fontSize:11},{id:'f2',type:'text',x:90,y:30,width:60,height:25,fontSize:11}],overrides:[]},{id:'p2',masterId:'m1',objects:[{id:'f3',type:'text',x:20,y:30,width:130,height:150,fontSize:11}],overrides:[]}],masters:[{id:'m1',name:'正文母版',objects:[{id:'mh',type:'text',x:20,y:10,width:130,height:10,text:'{title} · {page}',fontSize:9}]}],stories:[{id:'story1',name:'串接验收',text:'框间续排不丢字。👩🏽‍💻 é 标点，中文与 Latin words。\n'.repeat(25),frameIds:['f1','f2','f3']}]});
+const documentFixture=()=>checkDocument({format:'open-typesetter',version:3,title:'版面验收',blocks:[],composition:compositionFixture()});
+const measure=(text,f)=>[...text].length*(f.fontSize||11);
+test('v3 exact composition roundtrip; old versions remain supported',()=>{const d=documentFixture();assert.deepEqual(checkDocument(JSON.parse(JSON.stringify(d))),d);assert.equal(checkDocument({format:'open-typesetter',version:1,blocks:[]}).version,2);});
+test('thread ranges conserve every source character including combining sequences',()=>{const c=compositionFixture(),s=c.stories[0],fs=c.pages.flatMap(p=>p.objects);const r=flowStory(s,fs,measure);assert.equal(r.runs.map(r=>s.text.slice(r.start,r.end)).join('')+r.overset,s.text);const bounds=new Set([...new Intl.Segmenter('zh',{granularity:'grapheme'}).segment(s.text)].map(x=>x.index));bounds.add(s.text.length);assert.ok(r.runs.every(r=>bounds.has(r.start)&&bounds.has(r.end)));assert.ok(r.runs[1].end>r.runs[0].end);});
+test('resizing redistributes text, tiny frames report overset and never force an overwide glyph',()=>{const c=compositionFixture(),s=c.stories[0],frames=c.pages.flatMap(p=>p.objects),small=flowStory(s,frames,measure);frames[0].height=50;const big=flowStory(s,frames,measure);assert.ok(big.runs[0].end>small.runs[0].end);assert.equal(flowStory(s,[{...frames[0],width:1}],measure).overset,s.text);});
+test('duplicate frame memberships, dangling IDs, invalid geometry and unknown fields rejected',()=>{for(const mutate of [c=>c.stories[0].frameIds.push('f1'),c=>c.stories[0].frameIds.push('absent'),c=>c.pages[0].objects[0].width=0,c=>c.pages[0].objects[0].secret='x',c=>c.pages[0].objects[0].src='https://example.com']){const c=compositionFixture();mutate(c);assert.throws(()=>validateComposition(c));}});
+test('deleting a frame or page preserves the complete story and detaches references',()=>{const d=documentFixture(),text=d.composition.stories[0].text;applyCompositionOperation(d,{op:'delete_frame',pageId:'p1',frameId:'f1'});assert.equal(d.composition.stories[0].text,text);assert.deepEqual(d.composition.stories[0].frameIds,['f2','f3']);applyCompositionOperation(d,{op:'delete_page',pageId:'p1'});assert.equal(d.composition.stories[0].text,text);assert.deepEqual(d.composition.stories[0].frameIds,['f3']);assert.throws(()=>applyCompositionOperation(d,{op:'delete_page',pageId:'p2'}));});
+test('master update propagates while per-page overrides survive; reset restores inheritance',()=>{const d=documentFixture();applyCompositionOperation(d,{op:'override_master_object',pageId:'p1',objectId:'mh',patch:{text:'本页专用'}});applyCompositionOperation(d,{op:'upsert_master',master:{...d.composition.masters[0],objects:[{...d.composition.masters[0].objects[0],text:'新母版'}]}});assert.equal(pageObjects(d.composition,'p1')[0].text,'本页专用');assert.equal(pageObjects(d.composition,'p2')[0].text,'新母版');applyCompositionOperation(d,{op:'override_master_object',pageId:'p1',objectId:'mh',reset:true});assert.equal(pageObjects(d.composition,'p1')[0].text,'新母版');assert.throws(()=>applyCompositionOperation(d,{op:'delete_master',masterId:'m1'}),/IN_USE/);});
+test('page reorder leaves explicit thread order intact; split is grapheme safe and text preserving',()=>{const d=documentFixture(),s=structuredClone(d.composition.stories[0]);applyCompositionOperation(d,{op:'move_page',pageId:'p2',index:0});assert.deepEqual(d.composition.stories[0].frameIds,s.frameIds);assert.throws(()=>applyCompositionOperation(d,{op:'split_story',storyId:s.id,frameId:'f2',offset:s.text.indexOf('👩')+1,newStoryId:'s2'}),/BOUNDARY/);applyCompositionOperation(d,{op:'split_story',storyId:s.id,frameId:'f2',offset:s.text.indexOf('👩'),newStoryId:'s2'});assert.equal(d.composition.stories.map(s=>s.text).join(''),s.text);});
+test('MCP operations are atomic and reject changing locked objects',()=>{const d=documentFixture();const next=applyOperations(d,[{op:'set_frame_lock',pageId:'p1',frameId:'f1',locked:true}]).document;assert.throws(()=>applyOperations(next,[{op:'set_title',title:'should roll back'},{op:'delete_frame',pageId:'p1',frameId:'f1'}]),/LOCKED/);assert.equal(next.title,d.title);assert.equal(d.composition.pages[0].objects[0].locked,undefined);});
+test('two independent stories keep source and thread order across frame edits',()=>{const d=documentFixture();applyCompositionOperation(d,{op:'thread_frames',storyId:'story1',frameIds:['f1','f2']});applyCompositionOperation(d,{op:'upsert_story',story:{id:'second',name:'第二条流',text:'Independent story\n第二条流',frameIds:['f3']}});const second=structuredClone(d.composition.stories[1]);applyCompositionOperation(d,{op:'upsert_frame',pageId:'p1',frame:{...d.composition.pages[0].objects[0],x:60,height:20}});assert.deepEqual(d.composition.stories[1],second);assert.throws(()=>applyCompositionOperation(d,{op:'upsert_frame',pageId:'p1',masterId:'m1',frame:{id:'new',type:'text',x:0,y:0,width:40,height:40}}),/ONE_FRAME_OWNER/);});
+
+test('nested master overrides propagate in order, with page overrides taking precedence',()=>{
+ const d=documentFixture();
+ for(const [id,baseMasterId] of [['child','m1'],['grandchild','child']])applyCompositionOperation(d,{op:'upsert_master',master:{id,name:id,baseMasterId,objects:[]}});
+ applyCompositionOperation(d,{op:'assign_master',pageId:'p1',masterId:'grandchild'});
+ applyCompositionOperation(d,{op:'override_master_object',masterId:'child',objectId:'mh',patch:{color:'#ff0000'}});
+ applyCompositionOperation(d,{op:'override_master_object',pageId:'p1',objectId:'mh',patch:{text:'page'}});
+ applyCompositionOperation(d,{op:'upsert_frame',masterId:'m1',frame:{...d.composition.masters[0].objects[0],text:'parent'}});
+ assert.equal(pageObjects(d.composition,'p1')[0].text,'page');assert.equal(pageObjects(d.composition,'p1')[0].color,'#ff0000');
+ assert.equal(masterObjects(d.composition,'grandchild')[0].text,'parent');assert.equal(pageObjects(d.composition,'p2')[0].color,undefined);
+ applyCompositionOperation(d,{op:'override_master_object',pageId:'p1',objectId:'mh',reset:true});assert.equal(pageObjects(d.composition,'p1')[0].text,'parent');
+ applyCompositionOperation(d,{op:'override_master_object',masterId:'child',objectId:'mh',hidden:true});assert.equal(masterObjects(d.composition,'grandchild').length,0);
+ applyCompositionOperation(d,{op:'override_master_object',masterId:'child',objectId:'mh',reset:true});assert.equal(masterObjects(d.composition,'grandchild').length,1);
+ assert.deepEqual(checkDocument(d),d);
+});
+test('unused parent cycles, missing parents and deleting a referenced base are rejected atomically',()=>{
+ const d=documentFixture();applyCompositionOperation(d,{op:'upsert_master',master:{id:'child',name:'child',baseMasterId:'m1',objects:[]}});const before=structuredClone(d);
+ assert.throws(()=>applyCompositionOperation(d,{op:'upsert_master',master:{...d.composition.masters[0],baseMasterId:'child'}}),/CYCLE/);
+ assert.throws(()=>applyCompositionOperation(d,{op:'upsert_master',master:{id:'unused',name:'unused',baseMasterId:'missing',objects:[]}}),/NOT_FOUND/);
+ assert.throws(()=>applyCompositionOperation(d,{op:'delete_master',masterId:'m1'}),/IN_USE/);assert.deepEqual(d,before);
+ applyCompositionOperation(d,{op:'override_master_object',masterId:'child',objectId:'mh',patch:{text:'child'}});
+ applyCompositionOperation(d,{op:'assign_master',pageId:'p1',masterId:'child'});applyCompositionOperation(d,{op:'override_master_object',pageId:'p1',objectId:'mh',patch:{text:'page'}});
+ applyCompositionOperation(d,{op:'delete_frame',masterId:'m1',frameId:'mh'});assert.deepEqual(d.composition.masters[1].overrides,[]);assert.deepEqual(d.composition.pages[0].overrides,[]);
+});
+test('section first/recto/verso master rules follow page position and explicit page choices win',()=>{
+ const d=documentFixture();for(const id of ['first','odd','even'])applyCompositionOperation(d,{op:'upsert_master',master:{id,name:id,objects:[]}});
+ for(const id of ['p3','p4'])applyCompositionOperation(d,{op:'upsert_page',page:{id,objects:[]}});
+ for(const pageId of ['p1','p2'])applyCompositionOperation(d,{op:'assign_master',pageId,masterId:null,inherit:true});
+ const section={id:'chapter1',name:'Chapter One',startPageId:'p1',firstMasterId:'first',oddMasterId:'odd',evenMasterId:'even'};
+ applyCompositionOperation(d,{op:'upsert_section',section});
+ assert.deepEqual(d.composition.pages.map(p=>pageContext(d.composition,p.id).masterId),['first','even','odd','even']);
+ assert.equal(compositionText(d,'p3','{section} / {sectionPage} / {page}'),'Chapter One / 3 / 3');
+ applyCompositionOperation(d,{op:'assign_master',pageId:'p2',masterId:null});assert.equal(pageContext(d.composition,'p2').masterId,null);
+ applyCompositionOperation(d,{op:'assign_master',pageId:'p3',masterId:'m1'});assert.equal(pageContext(d.composition,'p3').masterId,'m1');
+ applyCompositionOperation(d,{op:'move_page',pageId:'p1',index:1});assert.equal(pageContext(d.composition,'p4').sectionPage,3);assert.equal(pageContext(d.composition,'p1').masterId,'first');
+ assert.throws(()=>applyCompositionOperation(d,{op:'delete_page',pageId:'p1'}),/SECTION_START_PAGE_IN_USE/);
+ assert.throws(()=>applyCompositionOperation(d,{op:'upsert_section',section:{...section,id:'duplicate'}}),/SECTION_START_PAGE/);
+ assert.throws(()=>applyCompositionOperation(d,{op:'delete_master',masterId:'even'}),/IN_USE/);
+ applyCompositionOperation(d,{op:'delete_section',sectionId:'chapter1'});assert.equal(pageContext(d.composition,'p4').masterId,undefined);assert.equal(pageContext(d.composition,'p3').masterId,'m1');
+});
+test('section reassignment clears only overrides absent from the newly inherited master',()=>{
+ const d=documentFixture();applyCompositionOperation(d,{op:'assign_master',pageId:'p1',masterId:null,inherit:true});
+ applyCompositionOperation(d,{op:'upsert_master',master:{id:'child',name:'child',baseMasterId:'m1',objects:[]}});
+ const section={id:'chapter1',name:'One',startPageId:'p1',oddMasterId:'m1'};applyCompositionOperation(d,{op:'upsert_section',section});
+ applyCompositionOperation(d,{op:'override_master_object',pageId:'p1',objectId:'mh',patch:{text:'kept'}});
+ applyCompositionOperation(d,{op:'upsert_section',section:{...section,oddMasterId:'child'}});assert.equal(pageObjects(d.composition,'p1')[0].text,'kept');
+ applyCompositionOperation(d,{op:'upsert_section',section:{...section,oddMasterId:null}});assert.deepEqual(d.composition.pages[0].overrides,[]);
+});

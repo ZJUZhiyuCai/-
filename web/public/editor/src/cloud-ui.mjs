@@ -1,4 +1,4 @@
-import {ProjectConnection} from './project-sync.mjs';
+import {ProjectConnection,documentFingerprint} from './project-sync.mjs';
 import {confirmAction} from './dialogs.mjs';
 export async function setupCloud({getDoc,replaceDoc,status}){
  const actions=document.querySelector('.file-actions'),state=document.getElementById('saveState');
@@ -11,7 +11,7 @@ export async function setupCloud({getDoc,replaceDoc,status}){
  document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();e.stopImmediatePropagation();save.click();}},true);
  window.addEventListener('beforeunload',e=>{if(connection.dirty){e.preventDefault();e.returnValue='';}});
  const projectId=new URLSearchParams(location.search).get('project');
- if(projectId){save.disabled=true;try{const draft=localStorage.getItem('shuye-draft-'+projectId);await connection.open(projectId);ready=true;if(draft){const local=JSON.parse(draft);if(local.baseRevision===connection.revision&&JSON.stringify(local.document)!==connection.base&&await confirmAction('发现上次未提交的浏览器草稿，是否恢复？'))await replaceDoc(local.document);else if(local.baseRevision!==connection.revision)status('云端已有更新，上次草稿仍保留在此浏览器。请在“恢复草稿”中取回。',true);}}catch(e){status('无法打开云端工程：'+e.message,true);}finally{save.disabled=false;}}
+ if(projectId){save.disabled=true;try{const draft=localStorage.getItem('shuye-draft-'+projectId);await connection.open(projectId);ready=true;if(draft){const local=JSON.parse(draft);if(local.baseRevision===connection.revision&&documentFingerprint(local.document)!==connection.base&&await confirmAction('发现上次未提交的浏览器草稿，是否恢复？'))await replaceDoc(local.document);else if(local.baseRevision!==connection.revision)status('云端已有更新，上次草稿仍保留在此浏览器。请在“恢复草稿”中取回。',true);}}catch(e){status('无法打开云端工程：'+e.message,true);}finally{save.disabled=false;}}
  button('恢复草稿',async()=>{const key='shuye-draft-'+(connection.projectId||projectId),draft=localStorage.getItem(key);if(!draft)throw Error('没有可恢复的浏览器草稿');if(await confirmAction('恢复浏览器草稿？建议随后“另存云端”避免覆盖新版本。'))await replaceDoc(JSON.parse(draft).document);});
  setInterval(async()=>{if(!ready||pending)return;if(connection.dirty){state.textContent='有修改未保存到云端 · r'+connection.revision;try{localStorage.setItem('shuye-draft-'+connection.projectId,JSON.stringify({baseRevision:connection.revision,document:getDoc()}));}catch{status('浏览器草稿缓存已满，请保存到云端或下载备份',true);}return;}if(document.activeElement?.matches('input,textarea,[contenteditable=true]'))return;state.textContent='云端已保存 · r'+connection.revision;try{if(await connection.poll())status('已同步云端 / agent 更新 · r'+connection.revision);}catch(e){state.textContent='云端连接中断 · 修改仍在浏览器';}},3000);
  if(!projectId)state.textContent='示例文稿 · 尚未保存到云端';

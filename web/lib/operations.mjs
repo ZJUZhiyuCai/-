@@ -2,6 +2,9 @@ import {validateDocument,replaceBlockText,uid} from '../public/editor/src/model.
 import {referenceDiagnostics} from '../public/editor/src/references.mjs';
 import {mergeCells,splitCell,resizeTable} from '../public/editor/src/table-layout.mjs';
 import {documentSchema,operation} from './schema.mjs';
+import {applyCompositionOperation} from '../public/editor/src/composition.mjs';
+import {compositionOperations} from './composition-schema.mjs';
+const compositionNames=new Set(compositionOperations.map(o=>o.shape.op.value));
 
 export function checkDocument(raw){
   documentSchema.parse(raw);
@@ -37,7 +40,7 @@ export function applyOperations(input,rawOps){
   const remove=ids=>{ids.forEach(get);doc.blocks=doc.blocks.filter(b=>!ids.includes(b.id));doc.bookmarks=doc.bookmarks.filter(b=>!ids.includes(b.blockId));doc.comments=doc.comments.filter(b=>!ids.includes(b.blockId));};
   const upsert=(key,value)=>{const at=doc[key].findIndex(x=>x.id===value.id);if(at<0)doc[key].push(value);else doc[key][at]=value;};
   const erase=(key,id)=>{if(!doc[key].some(x=>x.id===id))throw Error('RECORD_NOT_FOUND');doc[key]=doc[key].filter(x=>x.id!==id);};
-  for(const raw of rawOps){const o=operation.parse(raw);switch(o.op){
+  for(const raw of rawOps){const o=operation.parse(raw);if(compositionNames.has(o.op)){applyCompositionOperation(doc,o);continue;}switch(o.op){
     case 'set_title':doc.title=o.title;break;
     case 'set_layout':Object.assign(doc.layout,o.patch);break;
     case 'insert_blocks':insert(o.blocks,o.beforeId);break;

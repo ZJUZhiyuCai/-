@@ -1,0 +1,7 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {inspectFounderFfx} from '../lib/founder-ffx.mjs';
+const fixture=()=>{const bytes=new Uint8Array(0x5048+30),v=new DataView(bytes.buffer);v.setUint32(0,0x1234,true);v.setUint32(4,0x5678,true);let p=0x5048;v.setUint32(p,0x1001205,true);p+=4;v.setUint16(p,3,true);p+=2;for(const value of [0,0,0x80000000,0,0]){v.setUint32(p,value,true);p+=4;}v.setUint32(p,0xdeadbeef,true);return bytes;};
+test('observed FFX record ends at field-derived boundary and unknown class stops safely',()=>{const r=inspectFounderFfx(fixture());assert.equal(r.records.length,1);assert.equal(r.records[0].class,'Cv_TextFlowContainer');assert.equal(r.records[0].end-r.records[0].start,26);assert.equal(r.stopOffset,0x5048+26);assert.equal(r.stopReason,'UNKNOWN_CLASS_0xdeadbeef');assert.equal(r.editableImport,false);});
+test('FFX version mismatch never guesses payload length and malformed vectors fail closed',()=>{const a=fixture();new DataView(a.buffer).setUint16(0x504c,4,true);const r=inspectFounderFfx(a);assert.equal(r.records.length,0);assert.equal(r.stopOffset,0x5048);const b=fixture();new DataView(b.buffer).setUint32(0x504e,0xffffffff,true);assert.throws(()=>inspectFounderFfx(b),/VECTOR/);assert.throws(()=>inspectFounderFfx(fixture().slice(0,-10)),/TRUNCATED|VECTOR/);});
+test('FFX magic and input limits are explicit',()=>{assert.throws(()=>inspectFounderFfx(new Uint8Array(50)),/SIZE/);const b=fixture();b[0]=0;assert.throws(()=>inspectFounderFfx(b),/MAGIC/);});

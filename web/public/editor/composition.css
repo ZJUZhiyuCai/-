@@ -1,0 +1,14 @@
+.workspace.composition-mode{grid-template-columns:minmax(0,1fr) 310px}.composition-mode>.structure,.composition-mode>.inspector{display:none}.composition-inspector{background:#fff;padding:18px;border-left:1px solid #d4dedb;overflow:auto;max-height:calc(100vh - 140px);font-size:12px}.composition-inspector[hidden]{display:none}.composition-inspector h2{font-size:16px}.composition-inspector label{display:grid;gap:5px;margin:12px 0}.composition-inspector input,.composition-inspector textarea,.composition-inspector select{width:100%;box-sizing:border-box;padding:7px;border:1px solid #bccbc7;border-radius:4px;font:inherit}.composition-inspector textarea{min-height:105px}.composition-inspector button{margin:3px 0;padding:6px 9px}.composition-actions{display:flex;flex-wrap:wrap;gap:4px}.composition-inspector p{overflow-wrap:anywhere;font-size:11px;color:#50635d}.composition-paper{padding:0!important;position:relative;overflow:hidden}.composition-object{cursor:move;outline:1px dashed #a9c5c1;touch-action:none}.composition-object.is-selected,.composition-object:focus{outline:2px solid #147c70}.composition-line{margin:0;padding:0;letter-spacing:0}.composition-object img{pointer-events:none}.composition-inspector details{margin:10px 0}.composition-inspector summary{cursor:pointer}@media print{.composition-object{outline:none!important}.composition-inspector{display:none!important}.composition-paper{transform:none!important}}@media(max-width:800px){.workspace.composition-mode{grid-template-columns:minmax(330px,1fr) 260px}}
+.composition-mode .canvas{scroll-padding-top:70px}
+
+/* Keep tall transformed pages inside their own scroll viewport. Otherwise the
+   mobile flex layout lets paper paint over inspector controls and intercept clicks. */
+.composition-mode .canvas{min-height:0;overflow:auto}
+.composition-inspector{min-height:0}
+@media(max-width:760px){
+ .workspace.composition-mode{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) minmax(130px,1fr);overflow:hidden}
+ .composition-mode .canvas{min-height:0;overflow:auto}
+ .composition-inspector{max-height:none;border-left:0;border-top:1px solid #d4dedb}
+}
+
+.rich-story-grid{display:block;overflow:auto;max-width:100%;border-collapse:collapse}.rich-story-grid td{padding:2px;border:1px solid #ccd8d3}.rich-story-grid textarea{min-width:100px;max-width:180px;min-height:48px}.composition-inspector details{max-width:100%;overflow:auto}

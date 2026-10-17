@@ -1,4 +1,5 @@
 import {z} from 'zod/v4';
+import {compositionSchema,compositionOperations} from './composition-schema.mjs';
 export const id=z.string().regex(/^[A-Za-z0-9][\w-]{0,79}$/);
 const text=z.string().max(300000),integer=z.number().int().nonnegative();
 const obj=shape=>z.object(shape).strict();
@@ -12,9 +13,10 @@ export const block=blockPatch.extend({id:id.optional(),type:z.enum(['paragraph',
 const note=obj({id,text:z.string().max(30000)});
 const comment=note.extend({blockId:id,resolved:z.boolean().optional()});
 const namedStyle=obj({name:z.string().min(1).max(80),type:z.enum(['paragraph','heading']),...style});
-export const documentSchema=obj({format:z.literal('open-typesetter'),version:z.union([z.literal(1),z.literal(2)]),title:z.string().max(120).optional(),layout:layout.optional(),blocks:z.array(block).max(10000),notes:z.array(note).optional(),bibliography:z.array(note).optional(),comments:z.array(comment).optional(),styles:z.array(namedStyle).max(100).optional(),indexTerms:z.array(z.string().min(1).max(99)).max(1000).optional(),bookmarks:z.array(obj({name:z.string().max(80),blockId:id})).max(1000).optional(),proSources:z.array(obj({name:z.string().max(255),source:z.string().max(1048576)})).max(20).optional()});
+export const documentSchema=obj({format:z.literal('open-typesetter'),version:z.union([z.literal(1),z.literal(2),z.literal(3)]),composition:compositionSchema.optional(),title:z.string().max(120).optional(),layout:layout.optional(),blocks:z.array(block).max(10000),notes:z.array(note).optional(),bibliography:z.array(note).optional(),comments:z.array(comment).optional(),styles:z.array(namedStyle).max(100).optional(),indexTerms:z.array(z.string().min(1).max(99)).max(1000).optional(),bookmarks:z.array(obj({name:z.string().max(80),blockId:id})).max(1000).optional(),proSources:z.array(obj({name:z.string().max(255),source:z.string().max(1048576)})).max(20).optional()});
 const op=(type,fields)=>obj({op:z.literal(type),...fields});
 export const operation=z.discriminatedUnion('op',[
+  ...compositionOperations,
   op('set_title',{title:z.string().min(1).max(120)}),op('set_layout',{patch:layout}),
   op('insert_blocks',{blocks:z.array(block).min(1).max(1000),beforeId:id.optional()}),
   op('update_block',{blockId:id,patch:blockPatch}),op('delete_blocks',{blockIds:z.array(id).min(1)}),op('move_blocks',{blockIds:z.array(id).min(1),beforeId:id.optional()}),
