@@ -232,7 +232,7 @@ async function render() {
         el.dataset.start = part.start;
         el.dataset.end = part.end;
         if (part.block.id === selected) el.classList.add("selected");
-        if (['paragraph','heading'].includes(part.block.type) && !part.readOnly && !part.block.ruby?.length) {
+        if (['paragraph','heading'].includes(part.block.type) && !part.readOnly && !part.block.ruby?.length && !part.block.inlineMath?.length) {
           el.contentEditable = "plaintext-only";
           el.spellcheck = false;
           el.setAttribute(
@@ -310,7 +310,8 @@ async function render() {
   });
   $("pages").replaceChildren(fragment);
   $("paperMeta").textContent =
-    `${l.width} × ${l.height} mm　${l.columns} 栏　${result.pages.length} 页`;
+    `${l.width} × ${l.height} mm　${l.columns} 栏　${result.pages.length} 页${doc.journal ? "（结构编辑预览）" : ""}`;
+  $("paperMeta").nextElementSibling.textContent = doc.journal ? "首面、锚点与最终分页请查看「全文期刊 PDF」" : "单击纸面即可编辑";
   $("stats").textContent =
     `${doc.blocks.reduce((n, b) => n + Array.from(b.text).length + (b.rows||[]).flat().reduce((s,t)=>s+Array.from(t).length,0), 0).toLocaleString()} 字符　/　${result.pages.length} 页`;
   let css = $("printStyle");
