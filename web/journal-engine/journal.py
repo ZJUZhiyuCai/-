@@ -18,6 +18,7 @@ ROLE_STYLE={
 
 def prepare_blocks(doc):
     blocks=doc.get('blocks',[]);by_id={b.get('id'):b for b in blocks};caption_ids=set();anchored=set()
+    cell_ids=validate_cell_images(blocks)
     for b in blocks:
         if (b.get('anchor') or b.get('captionIds')) and b.get('type') not in ('image','table','equation'):raise ValueError('锚定只支持图、表和公式。')
         for ident in b.get('captionIds',[]):
@@ -34,12 +35,28 @@ def prepare_blocks(doc):
         (before if a['position']=='before' else after).setdefault(target['id'],[]).append(b);anchored.add(b['id'])
     front=[];body=[]
     for b in blocks:
-        if b.get('id') in caption_ids or b.get('id') in anchored:continue
+        if b.get('id') in caption_ids or b.get('id') in anchored or b.get('id') in cell_ids:continue
         if b.get('role') in FRONT_ROLES:
             if not doc.get('journal'):raise ValueError('首面角色须启用期刊模板。')
             front.append(b)
         else:body.extend(before.get(b.get('id'),[])+[b]+after.get(b.get('id'),[]))
     return front+body,by_id
+
+def validate_cell_images(blocks):
+    by_id={b.get('id'):b for b in blocks};owned=set()
+    for table in blocks:
+        if 'cellImages' not in table:continue
+        entries=table['cellImages']
+        if table.get('type')!='table' or not isinstance(entries,list) or len(entries)>10000:raise ValueError('单元格图片列表无效。')
+        for entry in entries:
+            r,c=entry.get('row'),entry.get('col');ident=entry.get('imageId');rows=table.get('rows',[])
+            if any(not isinstance(v,int) or isinstance(v,bool) or v<0 for v in (r,c)) or r>=len(rows) or c>=len(rows[r]):raise ValueError('单元格图片位置无效。')
+            image=by_id.get(ident)
+            if not image or image.get('type')!='image' or ident in owned or image.get('anchor') or image.get('captionIds') or image.get('sideTextIds') or image.get('text') or image.get('wrap','none')!='none' or image.get('placement','auto')!='auto':raise ValueError('单元格图片不存在、重复归属或含独立定位/题注。')
+            for m in table.get('merges',[]):
+                if m['row']<=r<m['row']+m['rowspan'] and m['col']<=c<m['col']+m['colspan'] and (m['rowspan']!=1 or (r,c)!=(m['row'],m['col'])):raise ValueError('单元格图片只支持普通格或横向合并起点。')
+            owned.add(ident)
+    return owned
 
 def marker(ident,edge):
     if not isinstance(ident,str) or not re.fullmatch(r'[A-Za-z0-9_:-]{1,180}',ident):return ''
@@ -108,10 +125,15 @@ def final_positions(source,source_pdf,output_pdf,report):
     return result
 
 def relation_report(document,objects,logical_objects=None):
-    diagnostics=[];relations=[];side_relations=[]
+    diagnostics=[];relations=[];side_relations=[];cell_relations=[]
     logical=objects if logical_objects is None else logical_objects
     for b in document.get('blocks',[]):
         a=b.get('anchor');obj=logical.get(b.get('id'),{})
+        for cell in b.get('cellImages',[]):
+            positions=[logical.get(ident,{}).get(edge) for ident in (b['id'],cell['imageId']) for edge in ('start','end')]
+            pages={p['page'] for p in positions if p};status='PASS' if all(positions) and len(pages)==1 else 'FAIL'
+            cell_relations.append({'tableId':b['id'],**cell,'status':status,'pages':sorted(pages)})
+            if status!='PASS':diagnostics.append({'code':'CELL_IMAGE_SEPARATED','severity':'error','message':'单元格图片与表格未完整落在同一页：'+cell['imageId'],'blockId':b['id']})
         if a:
             target=logical.get(a['targetId'],{});at=target.get('end' if a['position']=='after' else 'start');placed=obj.get('start' if a['position']=='after' else 'end')
             distance=abs(placed['page']-at['page']) if at and placed else None
@@ -131,6 +153,7 @@ def relation_report(document,objects,logical_objects=None):
             if not c or not p or c['page']!=p['page']:diagnostics.append({'code':'CAPTION_SEPARATED','severity':'error','message':'题注与图表起始页分离或未定位：'+ident,'blockId':b['id']})
     expected=[b['id'] for b in document.get('blocks',[]) if b.get('id') and b.get('type') in ('paragraph','heading','image','table','equation')]
     expected += [b['id']+':'+m['id'] for b in document.get('blocks',[]) for m in b.get('inlineMath',[]) if b.get('id')]
+    expected += ['note:'+n['id'] for n in document.get('notes',[]) if n.get('id')]
     missing=[ident for ident in expected if not all(edge in logical.get(ident,{}) for edge in ('start','end'))]
     if missing:diagnostics.append({'code':'SOURCE_OBJECT_NOT_LOCATED','severity':'error','message':'源对象未完整定位：'+str(len(missing))+' 个'})
-    return {'units':'pt','origin':'top-left','scope':'semantic start/end destinations, not ink or collision bounds','relationPageBasis':'logical pages before selection/imposition','sourceObjectCoverage':{'expected':len(expected),'mapped':len(expected)-len(missing),'missing':missing},'objects':objects,'relations':relations,'sideGroups':side_relations,'diagnostics':diagnostics}
+    return {'units':'pt','origin':'top-left','scope':'semantic start/end destinations, not ink or collision bounds','relationPageBasis':'logical pages before selection/imposition','sourceObjectCoverage':{'expected':len(expected),'mapped':len(expected)-len(missing),'missing':missing},'objects':objects,'relations':relations,'sideGroups':side_relations,'cellImages':cell_relations,'diagnostics':diagnostics}

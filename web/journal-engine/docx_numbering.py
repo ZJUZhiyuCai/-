@@ -93,23 +93,31 @@ class Numbering:
         except (ValueError,TypeError) as error:
             self.warnings.append('Word 自动编号未完整恢复：'+str(error)+'；须核对原稿。');return ''
 
-def check_fields(root,warnings):
-    stack=[];count=0
+def check_fields(root,warnings,stats=None):
+    # EndNote's DATA field stores document metadata, not a visible citation.
+    # Do not exempt EN.CITE, EN.REFLIST, or other empty/unknown fields.
+    def metadata(instruction):return instruction.strip()=='ADDIN EN.CITE.DATA'
+    stack=[];count=0;metadata_count=0
     for e in root.iter():
         if e.tag==W+'fldSimple':
             count+=1
-            if not ''.join(t.text or '' for t in e.iter(W+'t')).strip():warnings.append('Word fldSimple 域缺少可见缓存结果，须在原稿中更新。')
+            if metadata(e.get(W+'instr','')):metadata_count+=1
+            if not metadata(e.get(W+'instr','')) and not ''.join(t.text or '' for t in e.iter(W+'t')).strip():warnings.append('Word fldSimple 域缺少可见缓存结果，须在原稿中更新。')
         elif e.tag==W+'fldChar':
             kind=e.get(W+'fldCharType')
-            if kind=='begin':stack.append({'separated':False,'text':''});count+=1
+            if kind=='begin':stack.append({'separated':False,'text':'','instruction':''});count+=1
             elif kind=='separate' and stack:stack[-1]['separated']=True
             elif kind=='end' and stack:
                 f=stack.pop()
-                if not f['separated'] or not f['text'].strip():warnings.append('Word 域缺少可见缓存结果，须在原稿中更新。')
+                if metadata(f['instruction']):metadata_count+=1
+                if not metadata(f['instruction']) and (not f['separated'] or not f['text'].strip()):warnings.append('Word 域缺少可见缓存结果，须在原稿中更新。')
             else:warnings.append('Word 域边界不完整，须核对原稿。')
-        elif e.tag==W+'instrText' and not stack:warnings.append('Word instrText 缺少域边界，须核对原稿。')
+        elif e.tag==W+'instrText':
+            if not stack:warnings.append('Word instrText 缺少域边界，须核对原稿。')
+            elif not stack[-1]['separated']:stack[-1]['instruction']+=e.text or ''
         elif e.tag==W+'t':
             for f in stack:
                 if f['separated']:f['text']+=e.text or ''
     if stack:warnings.append('Word 域边界未闭合，须核对原稿。')
-    return count
+    if stats is not None:stats.update({'sourceFields':count,'metadataFields':metadata_count,'visibleFields':count-metadata_count})
+    return count-metadata_count

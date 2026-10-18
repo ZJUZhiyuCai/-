@@ -29,13 +29,28 @@ def import_docx(data):
         if 'word/_rels/document.xml.rels' in z.namelist():
             for r in xml(z.read('word/_rels/document.xml.rels')):
                 if r.get('TargetMode')!='External': rels[r.get('Id')]=posixpath.normpath('word/'+r.get('Target',''))
-        numbering=Numbering(xml(z.read('word/numbering.xml')) if 'word/numbering.xml' in z.namelist() else None,xml(z.read('word/styles.xml')) if 'word/styles.xml' in z.namelist() else None,warnings)
+        styles=xml(z.read('word/styles.xml')) if 'word/styles.xml' in z.namelist() else None
+        numbering=Numbering(xml(z.read('word/numbering.xml')) if 'word/numbering.xml' in z.namelist() else None,styles,warnings)
+        character_styles={s.get(W+'styleId'):s for s in (styles if styles is not None else []) if s.get(W+'type')=='character'}
+        def vertical_alignment(props):
+            seen=set()
+            while props is not None:
+                va=props.find(W+'vertAlign')
+                if va is not None:return va.get(W+'val') # Explicit baseline cancels inheritance.
+                name=val(props,'rStyle','') if not seen else val(parent,'basedOn','')
+                if not name:return None
+                if name in seen:warnings.append('字符样式继承存在循环，须核对上下标。');return None
+                seen.add(name);parent=character_styles.get(name)
+                if parent is None:return None
+                props=parent.find(W+'rPr')
+                # A style without rPr may still inherit another character style.
+                if props is None:props=ET.Element(W+'rPr')
         settings=xml(z.read('word/settings.xml')) if 'word/settings.xml' in z.namelist() else None
         notes=[]
         for e in root.iter():
             if local(e) in ('ins','del','moveFrom','moveTo'):
                 warnings.append('修订或域 '+local(e)+' 尚未执行接受/拒绝/更新策略，请先在原稿中确认。')
-        field_count=check_fields(root,warnings)
+        field_stats={};field_count=check_fields(root,warnings,field_stats)
         if field_count:
             warnings.append('已冻结 Word 域的现有可见结果（'+str(field_count)+' 个）；未执行外部查询或重算编号，须核对引用与题注。')
         for part,kind in [('word/footnotes.xml','footnote'),('word/endnotes.xml','endnote')]:
@@ -80,8 +95,8 @@ def import_docx(data):
                         for key,tag in [('bold','b'),('italic','i'),('underline','u')]:
                             el=props.find('w:'+tag,NS)
                             if el is not None and el.get(W+'val') not in ('0','false','none'): mark[key]=True
-                        va=props.find('w:vertAlign',NS)
-                        if va is not None and va.get(W+'val') in ('superscript','subscript'): mark[va.get(W+'val')]=True
+                        va=vertical_alignment(props)
+                        if va in ('superscript','subscript'): mark[va]=True
                         size=props.find('w:sz',NS)
                         if size is not None:
                             try: mark['fontSize']=max(5,min(72,float(size.get(W+'val'))/2))
@@ -141,7 +156,7 @@ def import_docx(data):
             return blocks+extras
         blocks=[]
         def table_block(e):
-            rows=[]; merges=[]; active={}; heads=0; in_header=True; extras=[]; inline_math=[]; cell_marks=[]
+            rows=[]; merges=[]; active={}; heads=0; in_header=True; extras=[]; inline_math=[]; cell_marks=[];cell_images=[]
             def number(parent,path,default=0):
                 item=parent.find(path,NS)
                 if item is None: return default
@@ -169,9 +184,13 @@ def import_docx(data):
                         offset+=utf16(item.get('text',''))+1
                     if marks:cell_marks.append({'row':row_index,'col':col,'marks':marks})
                     cells.extend(['\n'.join(b.get('text','') for b in items if b['type']!='image')]+['']*(span-1))
-                    if any(b['type']=='image' for b in items):
-                        warnings.append('表格内图片已提取到表格之后，锚定关系须按原稿重建。')
-                        extras.extend(b for b in items if b['type']=='image')
+                    text_seen=False
+                    for item in items:
+                        if item['type']=='image':
+                            if text_seen:warnings.append('单元格图片与文字交错，当前只支持图片在文字之前；须按原稿重建。')
+                            item['width']=100;extras.append(item)
+                            cell_images.append({'row':row_index,'col':col,'imageId':item['id']})
+                        elif item.get('text','').strip():text_seen=True
                     vm=cell.find('w:tcPr/w:vMerge',NS)
                     value=vm.get(W+'val','continue') if vm is not None else None
                     key=(col,span)
@@ -192,6 +211,10 @@ def import_docx(data):
             if len(rows)*cols>100000: raise ValueError('表格超过 100,000 个单元格。')
             rows=[row+['']*(cols-len(row)) for row in rows]
             result={'id':uid(),'type':'table','rows':rows,'headerRows':heads,'borderStyle':'grid','text':'','merges':[m for m in merges if m['rowspan']>1 or m['colspan']>1]}
+            if cell_images:result['cellImages']=cell_images
+            borders=e.find('w:tblPr/w:tblBorders',NS)
+            if borders is not None and all(borders.find(W+side) is not None and borders.find(W+side).get(W+'val') in ('none','nil') for side in ('top','left','bottom','right','insideH','insideV')) and not any(x.get(W+'val') not in ('none','nil') for x in e.findall('.//w:tcBorders/*',NS)):
+                result['borderStyle']='none'
             if inline_math: result['inlineMath']=inline_math
             if cell_marks:result['cellMarks']=cell_marks
             widths=[]
@@ -230,4 +253,5 @@ def import_docx(data):
             severity='warning' if i==0 or message.startswith(('原 Word 页眉页脚','表格网格列宽','已冻结 Word 域')) else 'error'
             diagnostics.append({'code':'DOCX_REVIEW' if severity=='warning' else 'DOCX_CONTENT_REVIEW','severity':severity,'message':message})
         report={'kind':'docx','sourceSha256':hashlib.sha256(data).hexdigest(),'sourceBytes':len(data),'counts':{'sourceMath':source_math,'sourceDisplayMath':sum(1 for e in root.iter(M+'oMathPara')),'sourceTables':sum(1 for e in root.iter(W+'tbl')),'importedTables':sum(b['type']=='table' for b in blocks),'importedMath':output_math,'sourceImages':source_images,'importedImages':output_images,'sourceNumberedParagraphs':numbering.source_count,'importedNumberedParagraphs':numbering.imported_count},'diagnostics':diagnostics}
+        report['counts'].update(field_stats)
         return {'blocks':blocks,'notes':notes,'warnings':warnings,'importReports':[report]}

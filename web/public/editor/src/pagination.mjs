@@ -76,8 +76,8 @@ export function blockElement(b,l,text=b.text,continued=false,part={}) {
     else el.textContent=text;
   } else if(b.type==='table') {
     if(b.text){const caption=document.createElement('div');caption.className='table-caption';inline(caption,b,l,b.text+(continued?'（续）':''));el.append(caption);}
-    const table=buildTableElement(b,{rowIndexes:part.rowIndexes,renderCell:(td,text,{row,col})=>inline(td,{inlineMath:b.inlineMath,marks:cellDisplayMarks(b,row,col)},l,text)});
-    el.append(table);
+    const table=buildTableElement(b,{rowIndexes:part.rowIndexes,renderCell:(td,text,{row,col})=>{for(const cell of (b.cellImages||[]).filter(c=>c.row===row&&c.col===col)){const source=l._images?.get(cell.imageId);if(!source)throw Error('单元格图片引用失效。');const img=document.createElement('img');img.src=source.src;img.alt='单元格插图';img.dataset.blockId=source.id;img.style.cssText=`display:block;width:${source.width||100}%;height:auto;margin:auto`;td.append(img);}inline(td,{inlineMath:b.inlineMath,marks:cellDisplayMarks(b,row,col)},l,text);}});
+    if(b.captionPosition==='below')el.prepend(table);else el.append(table);
   } else if(b.type==='toc'||b.type==='index') {
     if(!continued){const title=document.createElement('h2');title.textContent=b.text||(b.type==='toc'?'目录':'索引');el.append(title);}
     const entries=part.entries||b._entries||[];
@@ -89,9 +89,11 @@ export function blockElement(b,l,text=b.text,continued=false,part={}) {
 }
 const safeCut=safeFlowCut;
 function once(doc,measure,entries) {
+  const _images=new Map(doc.blocks.filter(b=>b.type==='image').map(b=>[b.id,b])),owned=new Set(doc.blocks.flatMap(b=>(b.cellImages||[]).map(c=>c.imageId)));
+  doc={...doc,_images,blocks:doc.blocks.filter(b=>!owned.has(b.id))};
   if(needsFlow(doc))return paginateFlow(doc,measure,entries,blockElement);
   measure.style.writingMode='horizontal-tb';measure.style.height='auto';
-  const l={...doc.layout,_notes:doc.notes||[]},fullWidth=(l.width-l.inner-l.outer)*MM,width=(fullWidth-l.gap*MM*(l.columns-1))/l.columns,height=(l.height-l.top-l.bottom)*MM;
+  const l={...doc.layout,_notes:doc.notes||[],_images:doc._images},fullWidth=(l.width-l.inner-l.outer)*MM,width=(fullWidth-l.gap*MM*(l.columns-1))/l.columns,height=(l.height-l.top-l.bottom)*MM;
   measure.style.width=`${width}px`;
   const pages=[],pageNotes=[],noteHeights=[],warnings=[],usedPages=[];let col=0,used,notes;
   const newPage=()=>{pages.push(Array.from({length:l.columns},()=>[]));used=Array(l.columns).fill(0);usedPages.push(used);notes=new Set();pageNotes.push(notes);noteHeights.push(0);col=0;};
@@ -113,7 +115,7 @@ function once(doc,measure,entries) {
     if(['table','toc','index'].includes(b.type)){
       const isTable=b.type==='table',count=isTable?b.rows.length:b._entries.length,header=isTable?headerRowCount(b):{count:0,warnings:[]},headers=header.count;
       warnings.push(...header.warnings);
-      const groupEnds=isTable?tableRowGroups(b).map(g=>g.end):Array.from({length:Math.max(1,count)},(_,i)=>i+1);
+      const groupEnds=isTable?(b.cellImages?.length?[count]:tableRowGroups(b).map(g=>g.end)):Array.from({length:Math.max(1,count)},(_,i)=>i+1);
       let at=0;
       do{
         let accepted=null;

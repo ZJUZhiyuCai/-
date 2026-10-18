@@ -192,7 +192,7 @@ async function render() {
   if(result.warnings.length){const summary=document.createElement('summary');summary.textContent=`排版提示（${result.warnings.length} 项）`;diagnostic.append(summary);for(const message of result.warnings){const p=document.createElement('p');p.textContent=message;diagnostic.append(p);}}
   lastPages = result.pages;
   const fragment = document.createDocumentFragment(),
-    l = {...doc.layout,_notes:viewDoc.notes||[]};
+    l = {...doc.layout,_notes:viewDoc.notes||[],_images:new Map(viewDoc.blocks.filter(b=>b.type==='image').map(b=>[b.id,b]))};
   const mm = 96 / 25.4;
   result.pages.forEach((columns, index) => {
     const wrap = document.createElement("div");

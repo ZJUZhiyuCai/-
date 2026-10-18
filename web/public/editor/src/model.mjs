@@ -1,7 +1,7 @@
 import {validateComposition} from './composition.mjs';
 import {journalBlockFields,validateJournal,validateRelations} from './journal.mjs';
 import {validateInlineMath,validateImportReports} from './integrity.mjs';
-import { validateTable } from './table-layout.mjs';
+import { validateTable, validateCellImages } from './table-layout.mjs';
 import { validateRuby,adjustRubyOnEdit } from './ruby.mjs';
 export const uid = () => globalThis.crypto.randomUUID();
 export const defaults = {
@@ -124,7 +124,8 @@ export function validateDocument(raw) {
       block.rows=b.rows.map(r=>{if(!Array.isArray(r))throw Error('表格行无效。');return Array.from({length:cols},(_,i)=>String(r[i]??''));});
       if(block.rows.some(r=>r.some(c=>c.length>10000)))throw Error('单元格文字过长。');
       block.headerRows=Number.isInteger(b.headerRows)?Math.max(0,Math.min(b.rows.length,b.headerRows)):1;
-      block.borderStyle=b.borderStyle==='three-line'?'three-line':'grid';
+      if(b.captionPosition!==undefined){if(!['above','below'].includes(b.captionPosition)||b.captionPosition==='below'&&!b.cellImages?.length)throw Error('下方题注需要单元格图片组。');block.captionPosition=b.captionPosition;}
+      block.borderStyle=['three-line','none'].includes(b.borderStyle)?b.borderStyle:'grid';
       Object.assign(block,validateTable(b));
       if(b.placement!==undefined){if(!['auto','column','full-width'].includes(b.placement))throw Error('表格位置无效。');block.placement=b.placement;}
     }
@@ -144,6 +145,10 @@ export function validateDocument(raw) {
         : 80;
     }
     Object.assign(block,journalBlockFields(b));
+    if(b.cellImages!==undefined){
+      if(b.type!=='table'||!Array.isArray(b.cellImages)||b.cellImages.length>10000)throw Error('单元格图片列表无效。');
+      block.cellImages=b.cellImages.map(c=>{if(!c||typeof c.imageId!=='string')throw Error('单元格图片引用无效。');return {row:c.row,col:c.col,imageId:c.imageId};});
+    }
     if(b.cellMarks!==undefined){
       if(b.type!=='table'||!Array.isArray(b.cellMarks)||b.cellMarks.length>100000)throw Error('单元格字样无效。');
       const cells=new Set();block.cellMarks=b.cellMarks.map(c=>{
@@ -157,12 +162,12 @@ export function validateDocument(raw) {
     if(inlineMath.length)block.inlineMath=inlineMath;
     return block;
   });
-  validateRelations(blocks);
+  validateCellImages(blocks);validateRelations(blocks);
   const journal=validateJournal(raw.journal,blocks,validateNotes(raw.notes));
   return {
     ...(journal?{journal}:{}),
     format: "open-typesetter",
-    version: raw.version===4||journal||raw.notes?.some(n=>n.marker!==undefined)||blocks.some(b=>b.role||b.anchor||b.captionIds||b.sourceOmml||b.cellMarks||b.equationNumber!==undefined||b.inlineMath?.some(m=>m.sourceOmml))?4:raw.version===3||raw.composition||raw.layout?.fontSet||raw.importReports?.length||blocks.some(b=>b.inlineMath?.length||b.placement)?3:2,
+    version: raw.version===4||journal||raw.notes?.some(n=>n.marker!==undefined)||blocks.some(b=>b.role||b.anchor||b.captionIds||b.sourceOmml||b.cellMarks||b.cellImages||b.captionPosition||b.equationNumber!==undefined||b.inlineMath?.some(m=>m.sourceOmml))?4:raw.version===3||raw.composition||raw.layout?.fontSet||raw.importReports?.length||blocks.some(b=>b.inlineMath?.length||b.placement)?3:2,
     ...(raw.composition ? {composition:validateComposition(raw.composition)} : {}),
     title: String(raw.title || "未命名文稿").slice(0, 120),
     layout,

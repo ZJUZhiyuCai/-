@@ -54,7 +54,8 @@ export function validateRelations(blocks){
   const used=new Set(),anchored=new Set(blocks.filter(b=>b.anchor).map(b=>b.id));
   const before=new Map(),after=new Map();
   for(const b of blocks)if(b.anchor){const map=b.anchor.position==='before'?before:after;const list=map.get(b.anchor.targetId)||[];list.push(b);map.set(b.anchor.targetId,list);}
-  const flow=blocks.filter(b=>!owners.has(b.id)&&!anchored.has(b.id)&&(!b.role||b.role==='reference')).flatMap(b=>[...(before.get(b.id)||[]),b,...(after.get(b.id)||[])]);
+  const cellIds=new Set(blocks.flatMap(b=>(b.cellImages||[]).map(c=>c.imageId)));
+  const flow=blocks.filter(b=>!owners.has(b.id)&&!cellIds.has(b.id)&&!anchored.has(b.id)&&(!b.role||b.role==='reference')).flatMap(b=>[...(before.get(b.id)||[]),b,...(after.get(b.id)||[])]);
   for(const image of blocks.filter(b=>b.sideTextIds)){
     if(!['left','right'].includes(image.wrap)||!image.anchor||!image.sideTextIds.includes(image.anchor.targetId)||!Number.isFinite(image.width)||image.width<15||image.width>60)throw Error('图文并排须指定左右位置、15–60% 图宽及范围内锚点。');
     const ids=new Set([...image.sideTextIds,image.id]);

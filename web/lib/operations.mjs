@@ -10,7 +10,7 @@ export function checkDocument(raw){
   documentSchema.parse(raw);
   const ids=new Set();for(const b of raw.blocks){if(b.id){if(ids.has(b.id))throw Error(`DUPLICATE_ID: ${b.id}`);ids.add(b.id);}if(b.headerRows!==undefined&&b.headerRows>(b.rows?.length??0))throw Error('INVALID_HEADER_ROWS');}
   for(const b of raw.blocks){
-    for(const key of ['rows','headerRows','borderStyle','merges','columnWidths','cellMarks'])if(b[key]!==undefined&&b.type!=='table')throw Error(`PROPERTY_REQUIRES_TABLE: ${key}`);
+    for(const key of ['rows','headerRows','borderStyle','merges','columnWidths','cellMarks','cellImages','captionPosition'])if(b[key]!==undefined&&b.type!=='table')throw Error(`PROPERTY_REQUIRES_TABLE: ${key}`);
     for(const key of ['src','width','wrap'])if(b[key]!==undefined&&b.type!=='image')throw Error(`PROPERTY_REQUIRES_IMAGE: ${key}`);
     if(b.type==='table'&&new Set(b.rows?.map(r=>r.length)).size>1)throw Error('RAGGED_TABLE_ROWS');
   }

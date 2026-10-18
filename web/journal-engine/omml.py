@@ -12,8 +12,8 @@ SYMBOLS=dict(zip('αβγδεζηθικλμνξπρστυφχψω',
     ['\\'+s+' ' for s in 'alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi pi rho sigma tau upsilon phi chi psi omega'.split()]))
 SYMBOLS.update({'×':r'\times ','÷':r'\div ','≤':r'\leq ','≥':r'\geq ','≠':r'\neq ','∈':r'\in ','∉':r'\notin ','∪':r'\cup ','∩':r'\cap ','∞':r'\infty ','⋮':r'\vdots ','⋯':r'\cdots ','…':r'\ldots ','⋱':r'\ddots ','−':'-','→':r'\to ','∂':r'\partial ','∇':r'\nabla ','∅':r'\emptyset ','∀':r'\forall ','∃':r'\exists '})
 DELIMITERS={'':'.','.':'.','(':'(',')':')','（':'(', '）':')','[':'[',']':']','{':r'\{','}':r'\}','|':r'\vert ','‖':r'\Vert ','∥':r'\Vert ','⌈':r'\lceil ','⌉':r'\rceil ','⌊':r'\lfloor ','⌋':r'\rfloor ','⟨':r'\langle ','⟩':r'\rangle ','〈':r'\langle ','〉':r'\rangle '}
-def literal(text):
-    escaped=''.join({'\\':r'\backslash ','{':r'\{','}':r'\}','%':r'\%','#':r'\#','&':r'\&','$':r'\$','_':r'\_'}.get(c,SYMBOLS.get(c,c)) for c in text)
+def literal(text,preserve_spaces=False):
+    escaped=''.join(r'\ ' if c==' ' and preserve_spaces else {'\\':r'\backslash ','{':r'\{','}':r'\}','%':r'\%','#':r'\#','&':r'\&','$':r'\$','_':r'\_'}.get(c,SYMBOLS.get(c,c)) for c in text)
     # CJK prose inside an equation is text, not individual math variables.
     return re.sub(r'[\u3000-\u303f\u3400-\u9fff\uff00-\uffef“”]+',lambda m:''.join(r'\text{'+m[0][i:i+16]+'}' for i in range(0,len(m[0]),16)),escaped)
 
@@ -35,6 +35,10 @@ def to_tex(node,warnings):
             def value(name,default=None):
                 x=props.find(M+name);return x.get(M+'val',default) if x is not None else default
             normal=props.find(M+'nor') is not None and value('nor','1') not in ('0','false','off')
+            if normal:
+                # Normal-text OMML runs carry literal spacing (e.g. SI units).
+                # Plain spaces in mathrm would otherwise vanish in TeX.
+                text=''.join(literal(c.text or '',preserve_spaces=True) if c.tag==M+'t' else convert(c) for c in e if not c.tag.endswith('Pr'))
             style=value('sty','p' if normal else 'i');script=value('scr','roman')
             family={'roman':None,'script':'mathcal','double-struck':'mathbb','fraktur':'mathfrak','sans-serif':'mathsf','monospace':'mathtt'}.get(script)
             if script not in ('roman','script','double-struck','fraktur','sans-serif','monospace'):

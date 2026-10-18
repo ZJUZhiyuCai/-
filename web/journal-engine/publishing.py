@@ -17,7 +17,10 @@ SAFE_COMMANDS=set('frac dfrac tfrac sqrt sum prod int oint iint iiint lim min ma
 SAFE_COMMANDS.update('boldsymbol mathfrak genfrac check breve coprod bigcup bigcap'.split())
 SAFE_ENVS={'matrix','pmatrix','bmatrix','Bmatrix','vmatrix','Vmatrix','cases','aligned','gathered'}
 def escape(text):
-    return ''.join({'\\':r'\textbackslash{}','{':r'\{','}':r'\}','$':r'\$','&':r'\&','#':r'\#','%':r'\%','_':r'\_','^':r'\textasciicircum{}','~':r'\textasciitilde{}','\n':r'\newline ','\t':r'\quad '}.get(c,c) for c in str(text) if ord(c)>=32 or c in '\n\t')
+    # Unicode subscript numerals are often absent from text/math font cmaps.
+    # Typeset the same numeral using TeX's subscript positioning; retain the
+    # original Unicode string in the document model and import evidence.
+    return ''.join((r'\textsubscript{'+str(ord(c)-0x2080)+'}') if c in '₀₁₂₃₄₅₆₇₈₉' else {'\\':r'\textbackslash{}','{':r'\{','}':r'\}','$':r'\$','&':r'\&','#':r'\#','%':r'\%','_':r'\_','^':r'\textasciicircum{}','~':r'\textasciitilde{}','\n':r'\newline ','\t':r'\quad '}.get(c,c) for c in str(text) if ord(c)>=32 or c in '\n\t')
 def safe_math(value):
     s=str(value)
     if len(s)>30000 or any(ord(c)<32 and c not in '\n\t\r' for c in s): raise ValueError('数学公式过长或含控制字符。')
@@ -91,6 +94,21 @@ def build_tex(doc,assets_dir,math_widths=None):
                        'mathsf':'symsfup','mathtt':'symtt','mathcal':'symcal','mathbb':'symbb','mathfrak':'symfrak'}
             tex=re.sub(r'\\('+'|'.join(alphabets)+r')\b',lambda m:'\\'+alphabets[m[1]],tex)
         return tex
+    def image_asset(image):
+        match=re.fullmatch(r'data:image/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)',str(image.get('src','')))
+        if not match: raise ValueError('图片必须为内嵌 PNG/JPEG/WebP。')
+        raw=base64.b64decode(match[2],validate=True)
+        if len(raw)>5*1024*1024: raise ValueError('图片超过 5 MB。')
+        ext=match[1]; name='asset-'+str(len(list(assets_dir.glob('asset-*'))))+'.'+ext
+        if ext=='webp':
+            try:
+                from PIL import Image
+                from io import BytesIO
+                Image.MAX_IMAGE_PIXELS=25000000
+                im=Image.open(BytesIO(raw)); im.load(); name=name.rsplit('.',1)[0]+'.png'; im.save(assets_dir/name)
+            except ImportError: raise ValueError('WebP 导出需要 Pillow；请改用 PNG/JPEG。')
+        else: (assets_dir/name).write_bytes(raw)
+        return name
     terms=[str(t) for t in doc.get('indexTerms',[]) if str(t).strip()][:1000]
     index_refs={term:['idx-'+str(ti)+'-'+str(bi) for bi,b in enumerate(blocks) if term in str(b.get('text','')) and b.get('type')!='index'] for ti,term in enumerate(terms)}
     if not isinstance(blocks,list) or len(blocks)>10000: raise ValueError('文档块数量无效。')
@@ -135,11 +153,13 @@ def build_tex(doc,assets_dir,math_widths=None):
                         custom=r'\ShuyeArticleNote'
                         lines=[]
                         for line in notes[ident].splitlines():
+                            line=line.strip()
                             label=re.match(r'^([*＊]?(?:收稿日期|基金项目|作者简介|通讯作者|通信作者)[：:])\s*',line)
                             if label:line_tex=r'\makebox[5.5em][l]{\textbf{'+escape(label[1])+'}}'+escape(line[len(label[0]):])
                             else:line_tex=r'\hspace*{5.5em}'+escape(line)
                             lines.append(r'\noindent\hangindent=5.5em\hangafter=1 '+line_tex+r'\par')
                         body=''.join(lines)
+                    body=marker('note:'+ident,'start')+body+marker('note:'+ident,'end')
                     out.append(r'\begingroup'+custom+r'\renewcommand{\thefootnote}{'+note_markers[ident]+r'}\footnote['+str(note_numbers[ident])+']{'+body+r'}\endgroup');note_seen.add(ident)
 
             else: out.append(escape(m.group(0))); warnings.append('缺少脚注内容：'+ident)
@@ -183,12 +203,17 @@ def build_tex(doc,assets_dir,math_widths=None):
             if a<z: boundaries.update((a,z)); converted.append((a,z,m))
         for ref in re.finditer(r'\[\^[^\]\n]+\]|\[\[math:([-\w]+)\]\]',s):
             boundaries={x for x in boundaries if not ref.start()<x<ref.end()}
+            if ref[0].startswith('[^'):boundaries.update((ref.start(),ref.end()))
         result=[]; ends=sorted(boundaries)
         for a,z in zip(ends,ends[1:]):
             style={}
             for x,y,m in converted:
                 if x<=a and z<=y: style.update(m)
             t=plain(s[a:z],{m['id']:m['text'] for m in b.get('inlineMath',[])},table_notes,owner_id=b.get('id'))
+            # Word formats footnote-reference runs as superscripts. The TeX
+            # footnote already owns its marker; nesting its paragraph body in
+            # textsuper/subscript either doubles the rise or breaks compilation.
+            if re.fullmatch(r'\[\^[^\]\n]+\]',s[a:z]):result.append(t);continue
             for key,cmd in [('bold','textbf'),('italic','textit'),('underline','uline'),('superscript','textsuperscript'),('subscript','textsubscript')]:
                 if style.get(key): t='\\'+cmd+'{'+t+'}'
             if style.get('bold') is False: t=r'\textmd{'+t+'}'
@@ -206,6 +231,7 @@ def build_tex(doc,assets_dir,math_widths=None):
 \newCJKfontfamily\kaifamily{SHUYEKAI}
 \newlength{\ShuyeTableWidth}
 \newsavebox{\ShuyeSideBox}
+\newsavebox{\ShuyeCellBox}
 \usepackage[unicode,hidelinks]{hyperref}
 \setcounter{secnumdepth}{0}
 \setcounter{tocdepth}{4}
@@ -246,7 +272,7 @@ def build_tex(doc,assets_dir,math_widths=None):
         pre+=r'\setlength{\heavyrulewidth}{.75pt}\setlength{\lightrulewidth}{.25pt}'+'\n'
         pre+=r'\setlength{\parskip}{0pt}\setlength{\skip\footins}{5pt}\renewcommand{\footnoterule}{\kern-3pt\hrule width81pt height.3pt\kern2.7pt}'+'\n'
         pre+=r'\makeatletter\renewcommand\footnotesize{\@setfontsize\footnotesize{6.9pt}{8pt}}\makeatother'+'\n'
-    pre+=r'\xeCJKDeclareCharClass{CJK}{"2160->"2188}'+'\n'
+    pre+=r'\xeCJKDeclareCharClass{CJK}{"2160->"2188,"2103,"2109}'+'\n'
     pre+=r'\pagestyle{fancy}\fancyhf{}\setlength{\headwidth}{\textwidth}'+'\n'
     pre+=r'\fancyhead[LE]{'+escape(layout.get('headerEven',layout.get('header','')))+r'}\fancyhead[RO]{'+escape(layout.get('headerOdd',layout.get('header','')))+'}\n'
     footer=lambda s: r'\thepage{}'.join(escape(part) for part in str(s).split('{page}'))
@@ -347,22 +373,22 @@ def build_tex(doc,assets_dir,math_widths=None):
         formula_map={m['id']:m['text'] for m in formulas}
         table_notes=set() if typ=='table' else None
         if b.get('ruby') and typ not in ('paragraph','heading'): raise ValueError('正式 PDF 仅支持正文和标题块的注音。')
-        text=styled(b) if typ in ('paragraph','heading') else plain(b.get('text',''),formula_map,table_notes) if typ=='table' else escape(b.get('text',''))
+        text='' if typ in ('paragraph','heading') else plain(b.get('text',''),formula_map,table_notes) if typ=='table' else escape(b.get('text',''))
         if typ in ('paragraph','heading'):
             if journal and role in ROLE_STYLE:
                 size,leading,alignment,bold=ROLE_STYLE[role]
                 custom=journal.get('roleStyles',{}).get(role,{})
+                render_source=b
                 size=number(custom.get('fontSize'),size,6,24);leading=number(custom.get('leading'),leading,7,36)
                 if 'bold' in custom:
                     if not isinstance(custom['bold'],bool):raise ValueError('角色字重无效。')
-                    bold=custom['bold'];text=styled({**b,'marks':[{k:v for k,v in m.items() if k!='bold'} for m in b.get('marks',[])]})
+                    bold=custom['bold'];render_source={**b,'marks':[{k:v for k,v in m.items() if k!='bold'} for m in b.get('marks',[])]}
                 family=custom.get('fontFamily','serif')
                 if family not in ('serif','sans'):raise ValueError('角色字体无效。')
                 family_cmd=r'\sffamily ' if family=='sans' else ''
                 align_cmd={'center':r'\centering ','left':r'\raggedright ','justify':''}[alignment]
                 indent=r'\setlength{\parindent}{13.8pt}' if role in ('abstract-zh','keywords-zh','abstract-en','keywords-en') else r'\setlength{\parindent}{0pt}'
                 if role in ('abstract-zh','keywords-zh'):indent+=r'\leftskip=16pt '
-                if role=='classification':text=re.sub(r' {2,}',lambda _:r'\hspace{6em}',text)
                 before=number(custom.get('spaceBefore'),4 if role.startswith('title') else 0,0,36)
                 after=number(custom.get('spaceAfter'),0,0,24)
                 gap=r'\addvspace{'+str(before)+'pt}' if before else ''
@@ -373,10 +399,15 @@ def build_tex(doc,assets_dir,math_widths=None):
                     label=re.match(r'^(\[[0-9]+\]|［[0-9]+］)\s*',b.get('text',''))
                     if label and not b.get('inlineMath') and not b.get('ruby'):
                         cut=len(label[0].encode('utf-16-le'))//2
-                        marks=[{**m,'start':max(cut,m['start'])-cut,'end':m['end']-cut} for m in b.get('marks',[]) if m.get('end',0)>cut]
-                        text=r'\makebox[7mm][l]{'+escape(label[1])+'}'+styled({**b,'text':b['text'][len(label[0]):],'marks':marks})
+                        marks=[{**m,'start':max(cut,m['start'])-cut,'end':m['end']-cut} for m in render_source.get('marks',[]) if m.get('end',0)>cut]
+                        text=r'\makebox[7mm][l]{'+escape(label[1])+'}'+styled({**render_source,'text':b['text'][len(label[0]):],'marks':marks})
+                # Rendering notes is stateful. Style overrides must not render
+                # and discard the first copy, consuming the only footnote body.
+                if not text:text=styled(render_source)
+                if role=='classification':text=re.sub(r' {2,}',lambda _:r'\hspace{6em}',text)
                 content.append(r'\par'+gap+'{'+align_cmd+family_cmd+indent+r'\fontsize{'+str(size)+'}{'+str(leading)+r'}\selectfont '+(r'\bfseries ' if bold else '')+r'\leavevmode '+block_labels+text+marker(b.get('id'),'end')+r'\par}\ShuyeAfterParagraph'+(r'\addvspace{'+str(after)+'pt}' if after else ''))
                 continue
+            text=styled(b)
             if typ=='heading':
                 lev=int(number(b.get('level'),1,1,4));command=['section','subsection','subsubsection','paragraph'][lev-1]
                 size=number(b.get('fontSize'),([10,9,8.5,8.2][lev-1] if journal else values['fontSize']*(1.8-lev*.2)),5,72)
@@ -443,28 +474,22 @@ def build_tex(doc,assets_dir,math_widths=None):
         elif typ=='image':
             if not side and b.get('placement')=='full-width':columns(False)
             if b.get('wrap','none')!='none': raise ValueError('PDF 图文并排必须显式提供 sideTextIds 正文范围，不能静默丢弃环绕设置。')
-            match=re.fullmatch(r'data:image/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)',str(b.get('src','')))
-            if not match: raise ValueError('图片必须为内嵌 PNG/JPEG/WebP。')
-            raw=base64.b64decode(match[2],validate=True)
-            if len(raw)>5*1024*1024: raise ValueError('图片超过 5 MB。')
-            ext=match[1]; name='asset-'+str(len(list(assets_dir.glob('asset-*'))))+'.'+ext
-            if ext=='webp':
-                try:
-                    from PIL import Image
-                    from io import BytesIO
-                    Image.MAX_IMAGE_PIXELS=25000000
-                    im=Image.open(BytesIO(raw)); im.load(); name=name.rsplit('.',1)[0]+'.png'; im.save(assets_dir/name)
-                except ImportError: raise ValueError('WebP 导出需要 Pillow；请改用 PNG/JPEG。')
-            else: (assets_dir/name).write_bytes(raw)
+            name=image_asset(b)
             width=number(b.get('width'),80,1,100)/100
             captions=''.join(marker(c,'start')+styled(by_id[c])+marker(c,'end')+r'\par ' for c in b.get('captionIds',[]))
             content.append(r'\par\noindent\begin{minipage}{\linewidth}\centering '+block_labels+r'\includegraphics[width='+str(width)+r'\linewidth,height=.75\textheight,keepaspectratio]{'+name+'}'+r'\par\vspace{2mm}{\fontsize{7}{9}\selectfont '+(r'\bfseries ' if journal and journal.get('captionBold') else '')+text+r'\par '+captions+'}'+marker(b.get('id'),'end')+r'\end{minipage}\par\smallskip')
         elif typ=='table':
             rows=b.get('rows',[])
+            caption_below=b.get('captionPosition','above')=='below'
             caption_text=''.join(marker(c,'start')+styled(by_id[c],table_notes)+marker(c,'end')+r'\par ' for c in b.get('captionIds',[]))
             if caption_text:text=(text+r'\par ' if text else '')+caption_text
             cell_styles={(c['row'],c['col']):c['marks'] for c in b.get('cellMarks',[])}
-            def cell_text(r,c):return styled({'id':b.get('id'),'text':str(rows[r][c]),'marks':cell_styles.get((r,c),[]),'inlineMath':b.get('inlineMath',[])},table_notes) if cell_styles.get((r,c)) else plain(str(rows[r][c]),formula_map,table_notes)
+            def cell_plain(r,c):return styled({'id':b.get('id'),'text':str(rows[r][c]),'marks':cell_styles.get((r,c),[]),'inlineMath':b.get('inlineMath',[])},table_notes) if cell_styles.get((r,c)) else plain(str(rows[r][c]),formula_map,table_notes)
+            cell_images={}
+            for entry in b.get('cellImages',[]):cell_images.setdefault((entry['row'],entry['col']),[]).append(by_id[entry['imageId']])
+            def cell_text(r,c):
+                images=''.join(marker(image['id'],'start')+r'\includegraphics[width='+str(number(image.get('width'),100,10,100)/100)+r'\linewidth]{'+image_asset(image)+'}'+marker(image['id'],'end')+r'\par ' for image in cell_images.get((r,c),[]))
+                return (r'\begin{minipage}[t]{\linewidth}\centering '+images+cell_plain(r,c)+r'\end{minipage}') if images else cell_plain(r,c)
             placement=b.get('placement','auto')
             if placement not in ('auto','column','full-width'): raise ValueError('表格位置无效。')
             in_column=cols>1 and (placement=='column' or (placement=='auto' and len(rows)<=10 and max(map(len,rows),default=0)<=4))
@@ -496,6 +521,7 @@ def build_tex(doc,assets_dir,math_widths=None):
             table_leading=values['fontSize']*(1.25 if journal else values['lineHeight'])
             row_heights=[table_leading*.7 if journal else values['fontSize']*1.5 for row in rows]
             for (r,c),(rs,cs) in anchors.items():
+                if rs==1:continue # Horizontal cells get their natural p-column height.
                 contents='\n'.join(str(rows[rr][cc]) for rr in range(r,r+rs) for cc in range(c,c+cs) if cc<len(rows[rr]) and str(rows[rr][cc]))
                 available=((values['width']-values['inner']-values['outer']-values['gap']*(cols-1))/cols if in_column else values['width']-values['inner']-values['outer'])*table_fraction*72/25.4*sum(widths[c:c+cs])-12
                 chars=max(1,available/values['fontSize']); lines=sum(max(1,math.ceil(len(line)/chars)) for line in contents.split('\n'))
@@ -515,15 +541,15 @@ def build_tex(doc,assets_dir,math_widths=None):
                     if merge:
                         r,c,rs,cs=merge
                         if j!=c: j+=1;continue
-                        t=r'\newline '.join(cell_text(rr,cc) for rr in range(r,r+rs) for cc in range(c,c+cs) if cc<len(rows[rr]) and str(rows[rr][cc])) if ri==r else ''
+                        t=r'\newline '.join(cell_text(rr,cc) for rr in range(r,r+rs) for cc in range(c,c+cs) if cc<len(rows[rr]) and (str(rows[rr][cc]) or (rr,cc) in cell_images)) if ri==r else ''
                         if ri==r and rs>1: t=r'\multirow[t]{'+str(rs)+'}{'+cell_width(c,cs)+'}{'+t+'}'
-                        if cs>1: t=r'\multicolumn{'+str(cs)+'}{'+('|' if grid else '')+cell_align+'p{'+cell_width(c,cs)+'}'+('|' if grid else '')+r'}{\leavevmode '+(block_labels if ri==0 and j==0 and not text else '')+(r'\rule{0pt}{'+str(round(row_heights[ri],2))+'pt}' if j==0 else '')+t+'}'
+                        if cs>1: t=r'\multicolumn{'+str(cs)+'}{'+('|' if grid else '')+cell_align+'p{'+cell_width(c,cs)+'}'+('|' if grid else '')+r'}{\leavevmode '+(block_labels if ri==0 and j==0 and (not text or caption_below) else '')+(r'\rule{0pt}{'+str(round(row_heights[ri],2))+'pt}' if j==0 else '')+t+'}'
                     else: t=cell_text(ri,j) if j<len(rows[ri]) else ''
                     # A phantom strut distributes space for long merged-cell text.
                     if j==0 and not (merge and span>1): t=r'\rule{0pt}{'+str(round(row_heights[ri],2))+'pt}'+t
                     # Enter horizontal mode before PDF destinations/penalties.
                     # Otherwise math-only p-cells acquire an empty first baseline.
-                    cells.append(t if merge and span>1 else r'\leavevmode '+(block_labels if ri==0 and j==0 and not text else '')+t);j+=span
+                    cells.append(t if merge and span>1 else r'\leavevmode '+(block_labels if ri==0 and j==0 and (not text or caption_below) else '')+t);j+=span
                 suffix=r' \\* ' if ri in joined_after else r' \\ '
                 if grid:
                     active={cc for (rr,cc),(r,c,rs,cs) in merged.items() if rr==ri and r+rs-1>ri}
@@ -547,33 +573,37 @@ def build_tex(doc,assets_dir,math_widths=None):
                     width=sum(values['fontSize']*(1 if ord(c)>127 else .6) for c in visible)+measured
                     extra=max(extra,max(0,math.ceil(width/available)-1)*values['fontSize']*values['lineHeight'])
                 estimated_height+=extra
-            keep_table=in_column or bool(journal and len(rows)<=10 and estimated_height<(values['height']-values['top']-values['bottom'])*72.27/25.4*.45)
+            keep_table=bool(cell_images) or in_column or bool(journal and len(rows)<=10 and estimated_height<(values['height']-values['top']-values['bottom'])*72.27/25.4*.45)
+            if caption_below and not cell_images:raise ValueError('下方题注目前只支持含单元格图片的整组输出。')
             env='tabular' if keep_table else 'longtable'
             if journal:content.append(r'{\fontsize{'+str(values['fontSize'])+'}{'+str(table_leading)+r'}\selectfont ')
+            if cell_images:content.append(r'\setbox\ShuyeCellBox=\vbox{')
             if keep_table: content.append(r'\par'+(r'\addvspace{4pt}' if journal else '')+r'\noindent\begin{minipage}{\linewidth}'+(r'\centering ' if journal else ''))
             content.append(r'\setlength{\ShuyeTableWidth}{'+('' if table_fraction==1 else str(table_fraction))+r'\linewidth}'+r'\begin{'+env+'}{'+spec+'}')
             # Explicit spanning title rows avoid longtable's automatic table number.
             # Separate first/continuation heads also work when headerRows is zero.
             def table_head(continued=False):
-                if text:
+                if text and not caption_below:
                     title=(re.sub(r'\\special\{pdf:dest [^}]+\}','',text)+'（续）') if continued else block_labels+text
                     caption_style=(r'\fontsize{7}{9}\selectfont '+(r'\bfseries ' if journal.get('captionBold') else '')) if journal else ''
                     content.append(r'\multicolumn{'+str(n)+r'}{@{}c@{}}{\parbox{\ShuyeTableWidth}{\centering '+caption_style+r'\leavevmode '+title+r'}} \\[6pt]')
-                content.append(r'\hline' if grid else r'\toprule')
+                content.append(r'\hline' if grid else r'\toprule' if b.get('borderStyle')!='none' else '')
                 for ri in range(heads):
                     row=render(ri)
                     if continued:row=re.sub(r'\\special\{pdf:dest [^}]+\}','',row)
                     content.append(row)
-                if heads and not grid: content.append(r'\midrule')
+                if heads and not grid and b.get('borderStyle')!='none': content.append(r'\midrule')
             table_head()
             if not keep_table:
                 content.append(r'\endfirsthead');table_head(True);content.append(r'\endhead')
-            content.extend(render(ri) for ri in range(heads,len(rows))); content.append((r'\hline' if grid else r'\bottomrule')+r'\end{'+env+'}')
+            content.extend(render(ri) for ri in range(heads,len(rows))); content.append((r'\hline' if grid else r'\bottomrule' if b.get('borderStyle')!='none' else '')+r'\end{'+env+'}')
+            if caption_below and text:content.append(r'\par\vspace{2mm}{\centering\fontsize{7}{9}\selectfont '+(r'\bfseries ' if journal and journal.get('captionBold') else '')+text+r'\par}')
             for ident in sorted(table_notes,key=lambda k:note_numbers[k]):
-                content.append(r'\par\noindent{\footnotesize '+r'\textsuperscript{'+note_markers[ident]+'} '+escape(notes[ident])+r'\par}')
+                content.append(r'\par\noindent{\footnotesize '+marker('note:'+ident,'start')+r'\textsuperscript{'+note_markers[ident]+'} '+escape(notes[ident])+marker('note:'+ident,'end')+r'\par}')
             content.append(marker(b.get('id'),'end'))
             if keep_table: content.append(r'\end{minipage}\par\smallskip')
-            elif cols>1: warnings.append('长表格以通栏输出，表格前后恢复双栏。')
+            if cell_images:content.append(r'}\ifdim\dimexpr\ht\ShuyeCellBox+\dp\ShuyeCellBox\relax>\textheight\PackageError{shuye}{Cell image table exceeds page height}{Reduce image width or split the table explicitly.}\fi\noindent\usebox{\ShuyeCellBox}\par')
+            elif not keep_table and cols>1: warnings.append('长表格以通栏输出，表格前后恢复双栏。')
             if journal:content.append('}')
         elif typ=='toc': columns(False); content.append(r'\tableofcontents\clearpage'); columns(True)
         elif typ=='index':
@@ -587,7 +617,7 @@ def build_tex(doc,assets_dir,math_widths=None):
     for ident,n in notes.items():
         if ident not in note_seen or layout.get('notesMode')=='endnote':
             if ident not in note_seen: warnings.append('未引用脚注已追加文末：'+ident)
-            content.append(r'\par\textbf{注 '+note_markers[ident]+'} '+escape(n))
+            content.append(r'\par\textbf{注 '+note_markers[ident]+'} '+marker('note:'+ident,'start')+escape(n)+marker('note:'+ident,'end'))
     return pre+'\n'.join(content)+'\n'+r'\end{document}',list(dict.fromkeys(warnings))
 
 def render_pdf(doc, evidence_dir=None):

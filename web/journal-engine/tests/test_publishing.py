@@ -1,6 +1,9 @@
-import unittest, tempfile, os, shutil
+import unittest, tempfile, os, shutil, re
 from pathlib import Path
 from publishing import safe_math, build_tex, render_pdf, TEX_DEFAULT
+
+def without_destinations(source):
+    return re.sub(r'\\special\{pdf:dest [^}]+\}', '', source)
 
 class PublishingTests(unittest.TestCase):
     @classmethod
@@ -14,7 +17,7 @@ class PublishingTests(unittest.TestCase):
     def test_escape_and_structure(self):
         with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1]/'tmp') as d:
             source,warnings=build_tex({'layout':{'columns':2},'notes':[{'id':'n','text':'注释'}],'blocks':[{'type':'paragraph','text':r'\input{x}[^n]'},{'type':'table','placement':'full-width','rows':[['标题','数值'],['甲','1']],'headerRows':1,'borderStyle':'three-line'},{'type':'toc'}]},d)
-            self.assertIn(r'\textbackslash{}input\{x\}',source); self.assertIn(r'\footnote[1]{注释}',source)
+            self.assertIn(r'\textbackslash{}input\{x\}',source); self.assertIn(r'\footnote[1]{注释}',without_destinations(source))
             self.assertIn(r'\endhead',source); self.assertIn(r'\begin{longtable}',source); self.assertIn(r'\tableofcontents',source)
     def test_table_titles_and_endnote_numbers(self):
         with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1]/'tmp') as d:
@@ -25,8 +28,8 @@ class PublishingTests(unittest.TestCase):
             self.assertNotIn(r'\caption',source)
             self.assertEqual(source.count(r'\textsuperscript{2}'),2)
             self.assertIn(r'\textsuperscript{1}',source)
-            self.assertIn(r'\textbf{注 1} 第一条',source)
-            self.assertIn(r'\textbf{注 2} 第二条',source)
+            self.assertIn(r'\textbf{注 1} 第一条',without_destinations(source))
+            self.assertIn(r'\textbf{注 2} 第二条',without_destinations(source))
             self.assertNotIn(r'\textsuperscript{*}',source)
     def test_merged_cells_preserve_all_text(self):
         with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1]/'tmp') as d:

@@ -31,6 +31,7 @@ export function setupTableEditor({getDoc,getSelected,change,status}) {
       const m=cellMerge(b,row,col),lastRow=row+(m?.rowspan||1)-1,lastCol=col+(m?.colspan||1)-1;
       if(row<selection.row+selection.rowspan&&lastRow>=selection.row&&col<selection.col+selection.colspan&&lastCol>=selection.col)td.classList.add('table-cell-selected');
       const pick=button(text||'（空）',event=>{if(event.shiftKey)focus={row:lastRow,col:lastCol};else {anchor={row,col};focus={row:lastRow,col:lastCol};}render();});
+      for(const cell of (b.cellImages||[]).filter(c=>c.row===row&&c.col===col)){const source=getDoc().blocks.find(b=>b.id===cell.imageId);if(source){const img=make('img');img.src=source.src;img.alt='单元格插图';img.style.cssText='display:block;max-width:160px;max-height:100px';td.append(img);}}
       pick.setAttribute('aria-label',`第 ${row+1} 行第 ${col+1} 列${m?`，合并 ${m.rowspan} 行 ${m.colspan} 列`:''}：${text}`);td.append(pick);
     }}));dialog.append(grid);
     const editor=make('div');editor.className='table-cell-source';const m=cellMerge(b,anchor.row,anchor.col)||{...anchor,rowspan:1,colspan:1};

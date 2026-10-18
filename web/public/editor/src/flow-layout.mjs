@@ -81,7 +81,7 @@ function physicalLines(el,vertical) {
  * following normal paragraphs until clear/end; they are never silently repeated.
  */
 export function paginateFlow(doc,measure,entries,renderBlock) {
-  const l={...doc.layout,_notes:doc.notes||[]},g=flowGeometry(l),vertical=g.writingMode==='vertical-rl';
+  const l={...doc.layout,_notes:doc.notes||[],_images:doc._images},g=flowGeometry(l),vertical=g.writingMode==='vertical-rl';
   const warnings=[],pages=[];let column=0,host;
   const capacity=vertical?g.width:g.height;
   measure.style.width=`${g.width}px`;measure.style.height='auto';measure.style.writingMode='horizontal-tb';
@@ -126,7 +126,7 @@ export function paginateFlow(doc,measure,entries,renderBlock) {
     const b=blocks[blockIndex];
     if(b.type==='pageBreak'){page();continue;}
     if(['table','toc','index'].includes(b.type)) {
-      const table=b.type==='table',groups=table?tableRowGroups(b):b._entries.map((_,i)=>({start:i,end:i+1}));
+      const table=b.type==='table',groups=table?(b.cellImages?.length?[{start:0,end:b.rows.length}]:tableRowGroups(b)):b._entries.map((_,i)=>({start:i,end:i+1}));
       const header=table?headerRowCount(b):{count:0,warnings:[]};warnings.push(...header.warnings);
       if(!groups.length){const t=trial(b,b.text);if(!t.fits&&hasContent())next();place(b,b.text,trial(b,b.text));continue;}
       let at=0;

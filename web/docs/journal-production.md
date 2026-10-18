@@ -68,6 +68,8 @@ python3 -m venv /opt/shuye-python
 
 ## 验证与收费交付边界
 
+新增跨稿件验证及单元格图片 API 见 [journal-multisample.md](journal-multisample.md)。对象覆盖现纳入脚注正文，因此原数学样本的覆盖计数由 493 增为 494；历史计数保留其原口径。
+
 公开样本可重复执行，不含客户稿件：
 
 ```sh

@@ -37,7 +37,7 @@ export function setupAdvanced({getDoc,getSelected,change,insert,select,status,re
       panel.append(label('表格数据（Tab 分列，换行分行）',data));
       panel.append(button('应用表格数据',()=>{const rows=data.value.replace(/\r/g,'').split('\n').map(r=>r.split('\t'));if(rows.length>5000||rows.some(r=>r.length>50)){status('表格最多 5,000 行、50 列。',true);return;}const width=Math.max(...rows.map(r=>r.length));mutate(block=>block.rows=rows.map(r=>Array.from({length:width},(_,i)=>r[i]||'')));}));
       const header=document.createElement('input');header.type='number';header.min=0;header.max=b.rows.length;header.value=b.headerRows??1;header.onchange=()=>mutate(block=>block.headerRows=Math.max(0,Math.min(block.rows.length,Number(header.value)||0)));panel.append(label('重复表头行数',header));
-      const style=document.createElement('select');for(const [v,t] of [['grid','网格表'],['three-line','三线表']]){const op=document.createElement('option');op.value=v;op.textContent=t;style.append(op);}style.value=b.borderStyle||'grid';style.onchange=()=>mutate(block=>block.borderStyle=style.value);panel.append(label('表格样式',style));
+      const style=document.createElement('select');for(const [v,t] of [['grid','网格表'],['three-line','三线表'],['none','无框线']]){const op=document.createElement('option');op.value=v;op.textContent=t;style.append(op);}style.value=b.borderStyle||'grid';style.onchange=()=>mutate(block=>block.borderStyle=style.value);panel.append(label('表格样式',style));
       panel.append(button('增加一行',()=>mutate(block=>block.rows.push(Array(block.rows[0].length).fill('')))));
     }
     if(b.type==='equation'){const p=document.createElement('p');p.className='hint';p.textContent='上方填写 LaTeX 数学式，支持分数、根式、上下标、求和和矩阵等。禁止文件和宏命令。';panel.append(p);}
