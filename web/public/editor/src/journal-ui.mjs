@@ -14,7 +14,7 @@ export function setupJournal({getDoc,change,status,makeButton}){
     for(const [value,text] of [['fandol','Fandol（TeX 配套）'],['source-han','思源宋体 / 黑体（需安装）'],['windows','Windows 系统字体（需安装）'],['mac','macOS 系统字体（需安装）']]){const option=document.createElement('option');option.value=value;option.textContent=text;cjk.append(option);}
     cjk.value=getDoc().layout.fontSet||'fandol';cjkRow.append(cjk);dialog.append(cjkRow);
     const save=document.createElement('button');save.textContent='应用期刊模板';save.onclick=()=>{
-      try{change(()=>{const doc=getDoc();doc.journal={template:'cn-academic',latinFont:latin.value,mathFont:math.value,normalizeTypography:true,...Object.fromEntries(Object.entries(inputs).map(([k,v])=>[k,v.value]))};doc.layout.fontSet=cjk.value;if(!doc.blocks.some(b=>b.role)){Object.assign(doc.layout,{width:170,height:240,inner:13,outer:13,top:16,bottom:16,columns:2,gap:6,fontSize:8.2,lineHeight:1.55});}});dialog.close();}catch(e){status(e.message,true);}
+      try{change(()=>{const doc=getDoc();doc.journal={...doc.journal,template:'cn-academic',latinFont:latin.value,mathFont:math.value,normalizeTypography:true,...Object.fromEntries(Object.entries(inputs).map(([k,v])=>[k,v.value]))};doc.layout.fontSet=cjk.value;if(!doc.blocks.some(b=>b.role)){Object.assign(doc.layout,{width:170,height:240,inner:13,outer:13,top:16,bottom:16,columns:2,gap:6,fontSize:8.2,lineHeight:1.55});}});dialog.close();}catch(e){status(e.message,true);}
     };
     const cancel=document.createElement('button');cancel.textContent='关闭';cancel.onclick=()=>dialog.close();dialog.append(save,cancel);dialog.onclose=()=>dialog.remove();document.body.append(dialog);dialog.showModal();
   });
@@ -32,6 +32,20 @@ export function journalFields({panel,b,doc,mutate,label}){
       for(const x of doc.blocks.filter(x=>['paragraph','heading'].includes(x.type)&&!x.role)){const o=document.createElement('option');o.value=x.id;o.textContent=x.text.slice(0,50);o.selected=b.captionIds?.includes(x.id)||false;choices.append(o);}
       choices.onchange=()=>mutate(block=>block.captionIds=[...choices.selectedOptions].map(o=>o.value));panel.append(label('绑定题注（可多选，最多 8 段）',choices));
     }
+  }
+  if(b.type==='image'&&doc.journal){
+    const choices=document.createElement('select');choices.multiple=true;choices.size=5;
+    for(const x of doc.blocks.filter(x=>['paragraph','equation'].includes(x.type)&&!x.role&&!doc.blocks.some(y=>y.captionIds?.includes(x.id)))){const o=document.createElement('option');o.value=x.id;o.textContent=x.text.slice(0,50);o.selected=b.sideTextIds?.includes(x.id)||false;choices.append(o);}
+    panel.append(label('PDF 图文并排范围（连续正文/公式）',choices));
+    const apply=document.createElement('button');apply.textContent='应用并排范围';apply.onclick=()=>mutate(block=>{
+      const ids=[...choices.selectedOptions].map(o=>o.value);
+      if(!ids.length){delete block.sideTextIds;block.wrap='none';return;}
+      const target=doc.blocks.find(x=>ids.includes(x.id)&&x.type==='paragraph');
+      if(!target)throw Error('并排范围须含至少一段正文作为锚点。');
+      block.sideTextIds=ids;block.wrap=block.wrap==='left'?'left':'right';block.width=Math.min(60,Math.max(15,block.width||40));
+      block.anchor={targetId:ids.includes(block.anchor?.targetId)?block.anchor.targetId:target.id,position:'after',maxPageDistance:0};
+    });panel.append(apply);
+    const note=document.createElement('p');note.textContent='并排组同页输出，保留正文顺序；不跨标题或其他图表。过高或公式越界会报错，需调整范围后重新生成 PDF。';panel.append(note);
   }
   if(b.type==='equation'){const number=document.createElement('input');number.value=b.equationNumber||'';number.maxLength=80;number.onchange=()=>mutate(block=>block.equationNumber=number.value);panel.append(label('公式编号',number));}
 }

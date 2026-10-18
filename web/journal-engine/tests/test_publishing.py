@@ -38,11 +38,11 @@ class PublishingTests(unittest.TestCase):
             self.assertIn(r'\setlength{\ShuyeTableWidth}{\linewidth}\begin{longtable}',source)
             self.assertNotIn(r'0.5\linewidth',source)
             self.assertTrue(any('表头' in w for w in warnings))
-    def test_wrap_warning(self):
+    def test_unsupported_wrap_rejects(self):
         import base64
         with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1]/'tmp') as d:
-            _,warnings=build_tex({'blocks':[{'type':'image','src':'data:image/png;base64,'+base64.b64encode(b'image').decode(),'wrap':'left'}]},d)
-            self.assertTrue(any('环绕' in w for w in warnings))
+            with self.assertRaisesRegex(ValueError,'sideTextIds'):
+                build_tex({'blocks':[{'type':'image','src':'data:image/png;base64,'+base64.b64encode(b'image').decode(),'wrap':'left'}]},d)
     def test_ruby_utf16_marks_and_escaping(self):
         with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1]/'tmp') as d:
             source,_=build_tex({'blocks':[{'type':'paragraph','text':'😀前中文后','marks':[{'start':3,'end':4,'bold':True}],'ruby':[{'start':3,'end':5,'text':r'zhong \input{x} & wen'}]}]},d)

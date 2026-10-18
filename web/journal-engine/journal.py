@@ -45,6 +45,35 @@ def marker(ident,edge):
     if not isinstance(ident,str) or not re.fullmatch(r'[A-Za-z0-9_:-]{1,180}',ident):return ''
     return r'\special{pdf:dest (shuye-'+edge+'-'+ident+') [@thispage /XYZ @xpos @ypos null]}'
 
+def side_groups(blocks,by_id):
+    """Bounded side-by-side groups, never a float that silently displaces text.
+
+    The selected source paragraphs/displays remain in order. Headings, other
+    objects, footnotes and nested anchors cannot enter an indivisible group.
+    """
+    groups={};claimed=set();widths={}
+    for image in (b for b in blocks if b.get('sideTextIds') is not None):
+        ids=image['sideTextIds'];anchor=image.get('anchor',{})
+        if image.get('type')!='image' or not isinstance(ids,list) or not 1<=len(ids)<=32 or len(set(ids))!=len(ids):raise ValueError('图文并排正文范围无效。')
+        width=image.get('width')
+        if image.get('wrap') not in ('left','right') or not isinstance(width,(int,float)) or not 15<=width<=60 or anchor.get('targetId') not in ids:raise ValueError('图文并排须指定左右位置、15–60% 图宽及范围内锚点。')
+        members=[]
+        for ident in ids:
+            b=by_id.get(ident)
+            if not b or b.get('type') not in ('paragraph','equation') or b.get('role') or b.get('anchor') or ident in claimed or '[^' in b.get('text',''):raise ValueError('并排范围只支持连续正文/公式，不能重叠、含脚注或嵌套锚点。')
+            members.append(b)
+        all_ids=set(ids+[image['id']]);indices=[i for i,b in enumerate(blocks) if b.get('id') in all_ids]
+        if len(indices)!=len(all_ids) or indices[-1]-indices[0]+1!=len(all_ids) or [b['id'] for b in blocks if b.get('id') in ids]!=ids:raise ValueError('图文并排范围必须按正文顺序连续，不能跨越其他图表或标题。')
+        groups[indices[0]]=(indices[-1],image,members);claimed.update(all_ids)
+        widths.update({ident:width for ident in ids})
+    result=[];i=0
+    while i<len(blocks):
+        if i in groups:
+            end,image,members=groups[i]
+            result.extend([{'type':'sideStart','image':image}]+members+[{**image,'_sideImage':True},{'type':'sideEnd'}]);i=end+1
+        else:result.append(blocks[i]);i+=1
+    return result,widths
+
 def read_positions(pdf):
     from pypdf import PdfReader
     reader=PdfReader(BytesIO(pdf));objects={}
@@ -79,7 +108,7 @@ def final_positions(source,source_pdf,output_pdf,report):
     return result
 
 def relation_report(document,objects,logical_objects=None):
-    diagnostics=[];relations=[]
+    diagnostics=[];relations=[];side_relations=[]
     logical=objects if logical_objects is None else logical_objects
     for b in document.get('blocks',[]):
         a=b.get('anchor');obj=logical.get(b.get('id'),{})
@@ -90,6 +119,13 @@ def relation_report(document,objects,logical_objects=None):
             status='NOT_CHECKED' if distance is None else 'FAIL' if distance>a['maxPageDistance'] or not order_ok else 'PASS'
             relations.append({'blockId':b['id'],'targetId':a['targetId'],'status':status,'pageDistance':distance,'maxPageDistance':a['maxPageDistance']})
             if status!='PASS':diagnostics.append({'code':'ANCHOR_CONSTRAINT','severity':'error','message':'对象锚点未通过：'+b['id'],'blockId':b['id']})
+        if b.get('sideTextIds'):
+            members=[b['id']]+b['sideTextIds']+b.get('captionIds',[])
+            positions=[logical.get(ident,{}).get(edge) for ident in members for edge in ('start','end')]
+            pages={p['page'] for p in positions if p}
+            status='PASS' if all(positions) and len(pages)==1 else 'FAIL'
+            side_relations.append({'blockId':b['id'],'textIds':b['sideTextIds'],'status':status,'pages':sorted(pages),'scope':'same-page semantic coverage; ink collision still requires inspection'})
+            if status!='PASS':diagnostics.append({'code':'SIDE_GROUP_SEPARATED','severity':'error','message':'图文并排组未完整落在同一页：'+b['id'],'blockId':b['id']})
         for ident in b.get('captionIds',[]):
             caption=logical.get(ident,{});c=caption.get('start');p=obj.get('start')
             if not c or not p or c['page']!=p['page']:diagnostics.append({'code':'CAPTION_SEPARATED','severity':'error','message':'题注与图表起始页分离或未定位：'+ident,'blockId':b['id']})
@@ -97,4 +133,4 @@ def relation_report(document,objects,logical_objects=None):
     expected += [b['id']+':'+m['id'] for b in document.get('blocks',[]) for m in b.get('inlineMath',[]) if b.get('id')]
     missing=[ident for ident in expected if not all(edge in logical.get(ident,{}) for edge in ('start','end'))]
     if missing:diagnostics.append({'code':'SOURCE_OBJECT_NOT_LOCATED','severity':'error','message':'源对象未完整定位：'+str(len(missing))+' 个'})
-    return {'units':'pt','origin':'top-left','scope':'semantic start/end destinations, not ink or collision bounds','relationPageBasis':'logical pages before selection/imposition','sourceObjectCoverage':{'expected':len(expected),'mapped':len(expected)-len(missing),'missing':missing},'objects':objects,'relations':relations,'diagnostics':diagnostics}
+    return {'units':'pt','origin':'top-left','scope':'semantic start/end destinations, not ink or collision bounds','relationPageBasis':'logical pages before selection/imposition','sourceObjectCoverage':{'expected':len(expected),'mapped':len(expected)-len(missing),'missing':missing},'objects':objects,'relations':relations,'sideGroups':side_relations,'diagnostics':diagnostics}

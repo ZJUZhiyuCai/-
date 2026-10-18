@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 import threading
 from contextlib import nullcontext
-from journal import prepare_blocks,ROLE_STYLE,FRONT_ROLES,marker,read_positions
+from journal import prepare_blocks,ROLE_STYLE,FRONT_ROLES,marker,read_positions,side_groups
 
 _LOCK=threading.Lock()
 TEX_DEFAULT=Path.home()/'AppData/Roaming/TinyTeX/bin/windows/xelatex.exe'
@@ -79,6 +79,8 @@ def build_tex(doc,assets_dir,math_widths=None):
     if layout.get('writingMode','horizontal') not in ('horizontal','horizontal-tb') or layout.get('vertical'): raise ValueError('正式 PDF 暂不支持竖排，请切换横排。')
     blocks,by_id=prepare_blocks(doc)
     journal=doc.get('journal')
+    blocks,side_widths=side_groups(blocks,by_id)
+    if side_widths and not journal:raise ValueError('图文并排须启用期刊 PDF 模板。')
     def render_math(value):
         tex=safe_math(value)
         if journal and journal.get('mathFont')=='stix-two':
@@ -98,6 +100,7 @@ def build_tex(doc,assets_dir,math_widths=None):
     cols=int(number(layout.get('columns'),1,1,4))
     active_width=100000;active_block_id=""
     notes={str(n.get('id')):str(n.get('text','')) for n in doc.get('notes',[]) if isinstance(n,dict)}; note_seen=set()
+    if journal and journal.get('articleNoteId') and journal['articleNoteId'] not in notes:raise ValueError('首面脚注引用失效。')
     note_numbers={ident:i+1 for i,ident in enumerate(notes)}
     note_markers={str(n.get('id')):escape(str(n.get('marker',note_numbers.get(str(n.get('id')),'')))) for n in doc.get('notes',[]) if isinstance(n,dict)}
     def plain(s,formulas=None,table_notes=None,owner_id=None):
@@ -108,7 +111,7 @@ def build_tex(doc,assets_dir,math_widths=None):
                 if m.group(2) not in (formulas or {}): raise ValueError('缺少行内公式定义：'+m.group(2))
                 tex=render_math(formulas[m.group(2)]);object_id=(owner_id or active_block_id)+':'+m.group(2)
                 punctuation=re.match(r'[，。；：、,.!?;:！？)\]）】]+',s[m.end():])
-                if journal and table_notes is None and math_widths and math_widths.get(object_id,0)>min(active_width,(values['width']-values['inner']-values['outer']-values['gap']*(cols-1))/cols*72.27/25.4)*.65:
+                if journal and table_notes is None and math_widths and math_widths.get(object_id,0)>min(active_width,(values['width']-values['inner']-values['outer']-values['gap']*(cols-1))/cols*72.27/25.4)*number(journal.get('inlineDisplayThreshold'),.65,.65,.95):
                     suffix=r'\text{'+escape(punctuation[0])+'}' if punctuation else ''
                     start=m.end()+(len(punctuation[0]) if punctuation else 0)
                     # Starting horizontal mode before/after a display creates
@@ -127,7 +130,18 @@ def build_tex(doc,assets_dir,math_widths=None):
                     out.append(r'\textsuperscript{'+note_markers[ident]+'}');table_notes.add(ident);note_seen.add(ident)
                 elif ident in note_seen: out.append(r'\textsuperscript{'+note_markers[ident]+'}')
                 else:
-                    out.append(r'\begingroup\renewcommand{\thefootnote}{'+note_markers[ident]+r'}\footnote['+str(note_numbers[ident])+']{'+escape(notes[ident])+r'}\endgroup');note_seen.add(ident)
+                    body=escape(notes[ident]);custom=''
+                    if journal and journal.get('articleNoteId')==ident:
+                        custom=r'\ShuyeArticleNote'
+                        lines=[]
+                        for line in notes[ident].splitlines():
+                            label=re.match(r'^([*＊]?(?:收稿日期|基金项目|作者简介|通讯作者|通信作者)[：:])\s*',line)
+                            if label:line_tex=r'\makebox[5.5em][l]{\textbf{'+escape(label[1])+'}}'+escape(line[len(label[0]):])
+                            else:line_tex=r'\hspace*{5.5em}'+escape(line)
+                            lines.append(r'\noindent\hangindent=5.5em\hangafter=1 '+line_tex+r'\par')
+                        body=''.join(lines)
+                    out.append(r'\begingroup'+custom+r'\renewcommand{\thefootnote}{'+note_markers[ident]+r'}\footnote['+str(note_numbers[ident])+']{'+body+r'}\endgroup');note_seen.add(ident)
+
             else: out.append(escape(m.group(0))); warnings.append('缺少脚注内容：'+ident)
             start=m.end()
         out.append(escape(s[start:])); return ''.join(out)
@@ -191,6 +205,7 @@ def build_tex(doc,assets_dir,math_widths=None):
 \usepackage[latin,nooverlap]{ruby}
 \newCJKfontfamily\kaifamily{SHUYEKAI}
 \newlength{\ShuyeTableWidth}
+\newsavebox{\ShuyeSideBox}
 \usepackage[unicode,hidelinks]{hyperref}
 \setcounter{secnumdepth}{0}
 \setcounter{tocdepth}{4}
@@ -204,15 +219,20 @@ def build_tex(doc,assets_dir,math_widths=None):
 % Otherwise every later paragraph is treated as the first after the heading,
 % and whole text/table sequences become unnecessarily inseparable.
 \makeatletter
+\newcommand{\ShuyeArticleNote}{\long\def\@makefntext##1{##1}}
 \newcommand{\ShuyeAfterParagraph}{\if@nobreak\@nobreakfalse\everypar{}\fi}
 \makeatother
 % fancyhdr is activated after geometry so it uses the actual paper width.
 \renewcommand{\headrulewidth}{0.3pt}
 \setlength{\headheight}{18pt}
 '''
+    if journal and 'headSepMm' in journal:pre+=r'\setlength{\headsep}{'+str(number(journal['headSepMm'],3,2,12))+'mm}\n'
     pre+=r'\geometry{paperwidth='+str(values['width'])+'mm,paperheight='+str(values['height'])+'mm,top='+str(values['top'])+'mm,bottom='+str(values['bottom'])+'mm,inner='+str(values['inner'])+'mm,outer='+str(values['outer'])+'mm}\n'
     pre=pre.replace('SHUYEFONTSET','none' if font_set=='source-han' else font_set).replace('SHUYEKAI',{'windows':'KaiTi','mac':'Kaiti SC','fandol':'FandolKai-Regular.otf','source-han':'FandolKai-Regular.otf'}[font_set])
+    if journal and journal.get('bodyWeight','regular') not in ('regular','light'):raise ValueError('正文字重无效。')
+    if journal and journal.get('bodyWeight')=='light' and font_set!='source-han':raise ValueError('轻字重正文须使用思源字体方案。')
     if font_set=='source-han':pre+=r'\setCJKmainfont[BoldFont={Source Han Serif SC Bold}]{Source Han Serif SC}\setCJKsansfont[BoldFont={Source Han Sans SC Bold}]{Source Han Sans SC}'+'\n'
+    if journal and journal.get('bodyWeight')=='light':pre=pre.replace(']{Source Han Serif SC}',']{Source Han Serif SC Light}')
     if journal and journal.get('latinFont')=='times':pre+=r'\setmainfont{Times New Roman}'+'\n'
     if journal:
         math_font=journal.get('mathFont','tex-default')
@@ -235,13 +255,15 @@ def build_tex(doc,assets_dir,math_widths=None):
         name=escape(journal.get('name',''));name_en=escape(journal.get('nameEn',''))
         volume,issue,year=(escape(journal.get(k,'')) for k in ('volume','issue','year'))
         small=r'\fontsize{6.9}{8.5}\selectfont '
-        pre+=r'\fancyhf{}\fancyhead[LE]{'+small+r'\thepage}\fancyhead[CE]{'+small+name+r'}\fancyhead[RE]{'+small+year+r'}\fancyhead[LO]{'+small+('第'+issue+'期' if issue else '')+r'}\fancyhead[CO]{'+small+escape(journal.get('shortTitle',''))+r'}\fancyhead[RO]{'+small+r'\thepage}'+'\n'
+        page_label=r'\thepage' if journal.get('pageNumberStyle','plain')=='plain' else r'·\enspace\thepage\enspace·'
+        year+=escape(journal.get('yearSuffix',''))
+        pre+=r'\fancyhf{}\fancyhead[LE]{'+small+page_label+r'}\fancyhead[CE]{'+small+name+r'}\fancyhead[RE]{'+small+year+r'}\fancyhead[LO]{'+small+('第'+issue+'期' if issue else '')+r'}\fancyhead[CO]{'+small+escape(journal.get('shortTitle',''))+r'}\fancyhead[RO]{'+small+page_label+r'}'+'\n'
         left=r'\strut '+('第'+volume+'卷' if volume else '')+('第'+issue+'期' if issue else '')+r'\\ '+escape(journal.get('date',''))
         right=r'\strut '+('Vol. '+volume if volume else '')+(' No. '+issue if issue else '')+r'\\ '+escape(journal.get('dateEn') or journal.get('year',''))
         pre+=r'\fancypagestyle{journalfirst}{\fancyhf{}\fancyhead[C]{'+small+r'\parbox[t]{.24\textwidth}{\raggedright '+left+r'}\parbox[t]{.52\textwidth}{\centering '+r'\strut '+name+r'\\ '+name_en+r'}\parbox[t]{.24\textwidth}{\raggedleft '+right+r'}}}'+"\n"
     pre+=r'\setlength{\columnsep}{'+str(values['gap'])+'mm}\n'+r'\setlength{\parindent}{'+str(values['indent'])+'em}\n'
     pre+=r'\begin{document}\setcounter{page}{'+str(int(values['pageStart']))+'}\n'+r'\fontsize{'+str(values['fontSize'])+'}{'+str(values['fontSize']*values['lineHeight'])+r'}\selectfont'+'\n'
-    if journal:pre+=r'\thispagestyle{journalfirst}\setlength{\emergencystretch}{3em}\setlength{\abovedisplayskip}{4pt plus 1pt minus 1pt}\setlength{\belowdisplayskip}{4pt plus 1pt minus 1pt}\setlength{\abovedisplayshortskip}{3pt}\setlength{\belowdisplayshortskip}{3pt}\setlength{\multicolsep}{5pt}'+'\n'
+    if journal:pre+=r'\allowdisplaybreaks[1]\thispagestyle{journalfirst}\setlength{\emergencystretch}{3em}\setlength{\abovedisplayskip}{4pt plus 1pt minus 1pt}\setlength{\belowdisplayskip}{4pt plus 1pt minus 1pt}\setlength{\abovedisplayshortskip}{3pt}\setlength{\belowdisplayshortskip}{3pt}\setlength{\multicolsep}{5pt}'+'\n'
     # Measure at the actual body size. A subsequent compile uses the measurements
     # to promote oversized inline/display mathematics to full-width blocks.
     if journal:
@@ -261,6 +283,8 @@ def build_tex(doc,assets_dir,math_widths=None):
         if journal and math_widths:
             col_width=(values['width']-values['inner']-values['outer']-values['gap']*(cols-1))/cols*72.27/25.4
             full_width=(values['width']-values['inner']-values['outer'])*72.27/25.4
+            if b.get('id') in side_widths:
+                full_width=full_width*(1-side_widths[b['id']]/100)-3*72.27/25.4;col_width=full_width
             widest=max([math_widths.get(b.get('id','')+':'+m['id'],0) for m in b.get('inlineMath',[])]+[math_widths.get(b.get('id'),0)])
             if b.get('type')=='equation' and widest>col_width-24:b={**b,'placement':'full-width'}
             elif b.get('type')=='paragraph' and widest>col_width-16:b={**b,'fullWidth':True}
@@ -276,8 +300,25 @@ def build_tex(doc,assets_dir,math_widths=None):
         if journal and planned[i].get('type')=='heading' and not planned[i].get('role') and (following.get('fullWidth') or following.get('placement')=='full-width'):
             planned[i]={**planned[i],'fullWidth':True}
     blocks=planned
-    paragraph_open=False
+    paragraph_open=False;side=None
     for block_num,b in enumerate(blocks):
+        if b['type']=='sideStart':
+            columns(False);side={'image':b['image'],'start':len(content)};continue
+        if b['type']=='sideEnd':
+            body='\n'.join(content[side['start']:side['split']]);graphic='\n'.join(content[side['split']:]);del content[side['start']:]
+            fraction=side['image']['width']/100
+            text_width=r'\dimexpr '+str(1-fraction)+r'\linewidth-3mm\relax'
+            left=r'\begin{minipage}[t]{'+text_width+r'}\vspace{0pt}\setlength{\parindent}{'+str(values['indent'])+r'em}'+body+r'\end{minipage}'
+            right=r'\begin{minipage}[t]{'+str(fraction)+r'\linewidth}\vspace{0pt}'+graphic+r'\end{minipage}'
+            if side['image']['wrap']=='left':left,right=right,left
+            content.append(r'\par\setbox\ShuyeSideBox=\vbox{\noindent '+left+r'\hspace{3mm}'+right+r'\par}'+
+                r'\ifdim\dimexpr\ht\ShuyeSideBox+\dp\ShuyeSideBox\relax>\textheight\PackageError{shuye}{Side-by-side group exceeds page height}{Reduce the selected text range or use a full-width figure.}\fi'+
+                r'\noindent\usebox{\ShuyeSideBox}\par\smallskip')
+            side=None;continue
+        if b.get('_sideImage'):
+            if paragraph_open:raise ValueError('并排范围不能截断公式引导段。')
+            side['split']=len(content)
+            b={**b,'width':100,'wrap':'none'}
         role=b.get('role');front=bool(journal and role in FRONT_ROLES)
         heading_space=values['fontSize']*values['lineHeight']*2
         if b.get('type')=='heading' and not front:
@@ -289,13 +330,14 @@ def build_tex(doc,assets_dir,math_widths=None):
                 lines=max(1,math.ceil(sum(size if ord(c)>127 else size*.6 for c in heading.get('text',''))/column_pt))
                 heading_space+=lines*size*1.3+(6 if journal else size*3)
             heading_space=min(heading_space,(values['height']-values['top']-values['bottom'])*72.27/25.4*.9)
-        columns(not front and not b.get('fullWidth',False) and b.get('placement')!='full-width',heading_space)
+        if not side:columns(not front and not b.get('fullWidth',False) and b.get('placement')!='full-width',heading_space)
         block_labels=marker(b.get('id'),'start')
         for term_num,term in enumerate(terms):
             if term in str(b.get('text','')) and b.get('type')!='index':
                 label='idx-'+str(term_num)+'-'+str(block_num); block_labels+=r'\phantomsection\label{'+label+'}'
         active_block_id=b.get('id','')
         active_width=(values['width']-values['inner']-values['outer']-(values['gap']*(cols-1) if incols else 0))/(cols if incols else 1)*72.27/25.4
+        if side:active_width=active_width*(side['image']['width']/100 if b.get('_sideImage') else 1-side['image']['width']/100)-(0 if b.get('_sideImage') else 3*72.27/25.4)
         typ=b.get('type')
         formulas=b.get('inlineMath',[]);formula_ids=[m.get('id') for m in formulas]
         if formulas and typ not in ('paragraph','heading','table'): raise ValueError('该类型不能使用行内公式。')
@@ -309,18 +351,36 @@ def build_tex(doc,assets_dir,math_widths=None):
         if typ in ('paragraph','heading'):
             if journal and role in ROLE_STYLE:
                 size,leading,alignment,bold=ROLE_STYLE[role]
+                custom=journal.get('roleStyles',{}).get(role,{})
+                size=number(custom.get('fontSize'),size,6,24);leading=number(custom.get('leading'),leading,7,36)
+                if 'bold' in custom:
+                    if not isinstance(custom['bold'],bool):raise ValueError('角色字重无效。')
+                    bold=custom['bold'];text=styled({**b,'marks':[{k:v for k,v in m.items() if k!='bold'} for m in b.get('marks',[])]})
+                family=custom.get('fontFamily','serif')
+                if family not in ('serif','sans'):raise ValueError('角色字体无效。')
+                family_cmd=r'\sffamily ' if family=='sans' else ''
                 align_cmd={'center':r'\centering ','left':r'\raggedright ','justify':''}[alignment]
                 indent=r'\setlength{\parindent}{13.8pt}' if role in ('abstract-zh','keywords-zh','abstract-en','keywords-en') else r'\setlength{\parindent}{0pt}'
                 if role in ('abstract-zh','keywords-zh'):indent+=r'\leftskip=16pt '
                 if role=='classification':text=re.sub(r' {2,}',lambda _:r'\hspace{6em}',text)
-                gap=r'\addvspace{4pt}' if role.startswith('title') else ''
-                if role=='reference':indent=r'\setlength{\parindent}{0pt}\hangindent=8mm\hangafter=1 '
-                content.append(r'\par'+gap+'{'+align_cmd+indent+r'\fontsize{'+str(size)+'}{'+str(leading)+r'}\selectfont '+(r'\bfseries ' if bold else '')+r'\leavevmode '+block_labels+text+marker(b.get('id'),'end')+r'\par}\ShuyeAfterParagraph')
+                before=number(custom.get('spaceBefore'),4 if role.startswith('title') else 0,0,36)
+                after=number(custom.get('spaceAfter'),0,0,24)
+                gap=r'\addvspace{'+str(before)+'pt}' if before else ''
+                if role=='reference':
+                    indent=r'\setlength{\parindent}{0pt}\hangindent=7mm\hangafter=1 '
+                    # Keep styled source bytes/marks intact; only box the visible
+                    # numeric label so first and continuation lines align.
+                    label=re.match(r'^(\[[0-9]+\]|［[0-9]+］)\s*',b.get('text',''))
+                    if label and not b.get('inlineMath') and not b.get('ruby'):
+                        cut=len(label[0].encode('utf-16-le'))//2
+                        marks=[{**m,'start':max(cut,m['start'])-cut,'end':m['end']-cut} for m in b.get('marks',[]) if m.get('end',0)>cut]
+                        text=r'\makebox[7mm][l]{'+escape(label[1])+'}'+styled({**b,'text':b['text'][len(label[0]):],'marks':marks})
+                content.append(r'\par'+gap+'{'+align_cmd+family_cmd+indent+r'\fontsize{'+str(size)+'}{'+str(leading)+r'}\selectfont '+(r'\bfseries ' if bold else '')+r'\leavevmode '+block_labels+text+marker(b.get('id'),'end')+r'\par}\ShuyeAfterParagraph'+(r'\addvspace{'+str(after)+'pt}' if after else ''))
                 continue
             if typ=='heading':
                 lev=int(number(b.get('level'),1,1,4));command=['section','subsection','subsubsection','paragraph'][lev-1]
                 size=number(b.get('fontSize'),([10,9,8.5,8.2][lev-1] if journal else values['fontSize']*(1.8-lev*.2)),5,72)
-                fmt=r'\normalfont\bfseries '+{'serif':r'\rmfamily ','sans':r'\sffamily ','kai':r'\kaifamily '}.get(b.get('fontFamily'),'')
+                fmt=r'\normalfont\bfseries '+(r'\sffamily ' if journal and journal.get('headingFamily')=='sans' else '')+{'serif':r'\rmfamily ','sans':r'\sffamily ','kai':r'\kaifamily '}.get(None if journal and journal.get('headingFamily')=='sans' else b.get('fontFamily'),'')
                 fmt+={'left':r'\raggedright ','right':r'\raggedleft ','center':r'\centering '}.get(b.get('align'),'')
                 fmt+=r'\fontsize{'+str(size)+'}{'+str(size*1.5)+r'}\selectfont '
                 spacing=',beforeskip=4pt,afterskip=2pt' if journal else ''
@@ -361,17 +421,28 @@ def build_tex(doc,assets_dir,math_widths=None):
             if journal and not incols and follows_equation and not paragraph_open:content.append(r'\nopagebreak[4]')
         elif typ=='pageBreak': columns(False); content.append(r'\newpage'); columns(True)
         elif typ=='equation':
-            if b.get('placement')=='full-width':columns(False)
+            if not side and b.get('placement')=='full-width':columns(False)
             equation=render_math(b.get('text',''))
             number_text=b.get('equationNumber','');suffix=(r'\text{'+escape(b['equationSuffix'])+'}') if b.get('equationSuffix') else ''
             from math_layout import continues_equation
             continuation=bool(journal and block_num+1<len(blocks) and blocks[block_num+1].get('type')=='equation' and continues_equation(b.get('text','')+b.get('equationSuffix','')))
-            content.append((r'\postdisplaypenalty=10000 ' if continuation else r'\postdisplaypenalty=0 ')+r'\begin{equation*}'+block_labels+math_with_suffix(equation,suffix)+(r'\tag{'+escape(number_text)+'}' if number_text else '')+marker(b.get('id'),'end')+r'\end{equation*}')
-            if paragraph_open:content.append(r'\par}\ShuyeAfterParagraph');paragraph_open=False
-            if continuation:content.append(r'\nopagebreak[4]')
+            previous_display=bool(journal and cols==1 and block_num and blocks[block_num-1].get('type')=='equation')
+            next_display=bool(journal and cols==1 and block_num+1<len(blocks) and blocks[block_num+1].get('type')=='equation')
+            expression=block_labels+math_with_suffix(equation,suffix)+(r'\tag{'+escape(number_text)+'}' if number_text else '')+marker(b.get('id'),'end')
+            if previous_display or next_display:
+                # One display run eliminates phantom text baselines between
+                # adjacent source equations. Rows retain their own destinations
+                # and tags, and may break pages except across a continued relation.
+                if not previous_display:content.append(r'\postdisplaypenalty=0 \begin{gather*}')
+                content.append(expression+(r'\\*' if continuation else r'\\') if next_display else expression+r'\end{gather*}')
+                if not next_display and paragraph_open:content.append(r'\par}\ShuyeAfterParagraph');paragraph_open=False
+            else:
+                content.append((r'\postdisplaypenalty=10000 ' if continuation else r'\postdisplaypenalty=0 ')+r'\begin{equation*}'+expression+r'\end{equation*}')
+                if paragraph_open:content.append(r'\par}\ShuyeAfterParagraph');paragraph_open=False
+                if continuation:content.append(r'\nopagebreak[4]')
         elif typ=='image':
-            if b.get('placement')=='full-width':columns(False)
-            if b.get('wrap','none')!='none': warnings.append('正式 PDF 暂不支持图片环绕，图片按独立块输出。')
+            if not side and b.get('placement')=='full-width':columns(False)
+            if b.get('wrap','none')!='none': raise ValueError('PDF 图文并排必须显式提供 sideTextIds 正文范围，不能静默丢弃环绕设置。')
             match=re.fullmatch(r'data:image/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)',str(b.get('src','')))
             if not match: raise ValueError('图片必须为内嵌 PNG/JPEG/WebP。')
             raw=base64.b64decode(match[2],validate=True)
@@ -387,7 +458,7 @@ def build_tex(doc,assets_dir,math_widths=None):
             else: (assets_dir/name).write_bytes(raw)
             width=number(b.get('width'),80,1,100)/100
             captions=''.join(marker(c,'start')+styled(by_id[c])+marker(c,'end')+r'\par ' for c in b.get('captionIds',[]))
-            content.append(r'\par\noindent\begin{minipage}{\linewidth}\centering '+block_labels+r'\includegraphics[width='+str(width)+r'\linewidth,height=.75\textheight,keepaspectratio]{'+name+'}'+r'\par\vspace{2mm}{\fontsize{7}{9}\selectfont '+text+r'\par '+captions+'}'+marker(b.get('id'),'end')+r'\end{minipage}\par\smallskip')
+            content.append(r'\par\noindent\begin{minipage}{\linewidth}\centering '+block_labels+r'\includegraphics[width='+str(width)+r'\linewidth,height=.75\textheight,keepaspectratio]{'+name+'}'+r'\par\vspace{2mm}{\fontsize{7}{9}\selectfont '+(r'\bfseries ' if journal and journal.get('captionBold') else '')+text+r'\par '+captions+'}'+marker(b.get('id'),'end')+r'\end{minipage}\par\smallskip')
         elif typ=='table':
             rows=b.get('rows',[])
             caption_text=''.join(marker(c,'start')+styled(by_id[c],table_notes)+marker(c,'end')+r'\par ' for c in b.get('captionIds',[]))
@@ -405,7 +476,8 @@ def build_tex(doc,assets_dir,math_widths=None):
             if len(raw_widths)!=n: raise ValueError('表格列宽数量与列数不一致。')
             widths=[number(v,1,.001,10000) for v in raw_widths]; total=sum(widths);widths=[v/total for v in widths]
             def cell_width(col,span=1): return r'\dimexpr '+str(round(sum(widths[col:col+span]),7))+r'\ShuyeTableWidth-2\tabcolsep-2\arrayrulewidth\relax'
-            cell_align=r'>{\raggedright\arraybackslash}'
+            table_fraction=number((journal or {}).get('tableWidthPercent'),100,70,100)/100
+            cell_align='>{'+{'center':r'\centering', 'right':r'\raggedleft'}.get(b.get('align'),r'\raggedright')+r'\arraybackslash}'
             spec=('|' if grid else '')+''.join(cell_align+'p{'+cell_width(j)+'}'+('|' if grid else '') for j in range(n))
             merged={}; anchors={}; joined_after=set()
             for merge in b.get('merges',[]):
@@ -425,7 +497,7 @@ def build_tex(doc,assets_dir,math_widths=None):
             row_heights=[table_leading*.7 if journal else values['fontSize']*1.5 for row in rows]
             for (r,c),(rs,cs) in anchors.items():
                 contents='\n'.join(str(rows[rr][cc]) for rr in range(r,r+rs) for cc in range(c,c+cs) if cc<len(rows[rr]) and str(rows[rr][cc]))
-                available=((values['width']-values['inner']-values['outer']-values['gap']*(cols-1))/cols if in_column else values['width']-values['inner']-values['outer'])*72/25.4*sum(widths[c:c+cs])-12
+                available=((values['width']-values['inner']-values['outer']-values['gap']*(cols-1))/cols if in_column else values['width']-values['inner']-values['outer'])*table_fraction*72/25.4*sum(widths[c:c+cs])-12
                 chars=max(1,available/values['fontSize']); lines=sum(max(1,math.ceil(len(line)/chars)) for line in contents.split('\n'))
                 needed=(lines+1)*values['fontSize']*values['lineHeight']
                 for rr in range(r,r+rs): row_heights[rr]=max(row_heights[rr],needed/rs)
@@ -463,7 +535,7 @@ def build_tex(doc,assets_dir,math_widths=None):
                     suffix+=''.join(r'\cline{'+str(a)+'-'+str(z)+'}' for a,z in runs)
                 return ' & '.join(cells)+suffix
             estimated_height=sum(row_heights)+(len(rows)*table_leading*.3 if journal else 0)+30+16*len(b.get('captionIds',[]))
-            table_width_pt=(values['width']-values['inner']-values['outer'])*72.27/25.4
+            table_width_pt=(values['width']-values['inner']-values['outer'])*72.27/25.4*table_fraction
             for ri,row in enumerate(rows):
                 extra=0
                 for ci,cell in enumerate(row):
@@ -478,14 +550,14 @@ def build_tex(doc,assets_dir,math_widths=None):
             keep_table=in_column or bool(journal and len(rows)<=10 and estimated_height<(values['height']-values['top']-values['bottom'])*72.27/25.4*.45)
             env='tabular' if keep_table else 'longtable'
             if journal:content.append(r'{\fontsize{'+str(values['fontSize'])+'}{'+str(table_leading)+r'}\selectfont ')
-            if keep_table: content.append(r'\par\noindent\begin{minipage}{\linewidth}')
-            content.append(r'\setlength{\ShuyeTableWidth}{\linewidth}'+r'\begin{'+env+'}{'+spec+'}')
+            if keep_table: content.append(r'\par'+(r'\addvspace{4pt}' if journal else '')+r'\noindent\begin{minipage}{\linewidth}'+(r'\centering ' if journal else ''))
+            content.append(r'\setlength{\ShuyeTableWidth}{'+('' if table_fraction==1 else str(table_fraction))+r'\linewidth}'+r'\begin{'+env+'}{'+spec+'}')
             # Explicit spanning title rows avoid longtable's automatic table number.
             # Separate first/continuation heads also work when headerRows is zero.
             def table_head(continued=False):
                 if text:
                     title=(re.sub(r'\\special\{pdf:dest [^}]+\}','',text)+'（续）') if continued else block_labels+text
-                    caption_style=r'\fontsize{7}{9}\selectfont ' if journal else ''
+                    caption_style=(r'\fontsize{7}{9}\selectfont '+(r'\bfseries ' if journal.get('captionBold') else '')) if journal else ''
                     content.append(r'\multicolumn{'+str(n)+r'}{@{}c@{}}{\parbox{\ShuyeTableWidth}{\centering '+caption_style+r'\leavevmode '+title+r'}} \\[6pt]')
                 content.append(r'\hline' if grid else r'\toprule')
                 for ri in range(heads):

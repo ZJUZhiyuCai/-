@@ -158,7 +158,7 @@ export function validateDocument(raw) {
     return block;
   });
   validateRelations(blocks);
-  const journal=validateJournal(raw.journal,blocks);
+  const journal=validateJournal(raw.journal,blocks,validateNotes(raw.notes));
   return {
     ...(journal?{journal}:{}),
     format: "open-typesetter",

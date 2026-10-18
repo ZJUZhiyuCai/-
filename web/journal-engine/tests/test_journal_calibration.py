@@ -52,8 +52,8 @@ class CalibrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             tex,_=build_tex(d,folder)
             self.assertIn('Jan. 2030',tex)
-            self.assertIn(r'\postdisplaypenalty=10000 \begin{equation*}',tex)
-            self.assertIn(r'\end{equation*}\n\nopagebreak[4]'.replace(r'\n','\n',1),tex)
+            self.assertIn(r'\begin{gather*}',tex)
+            self.assertIn(r'\\*',tex)
 
     @unittest.skipUnless(AVAILABLE,'XeLaTeX unavailable')
     def test_continued_inequality_cannot_leave_a_relation_at_page_bottom(self):
