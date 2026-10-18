@@ -90,7 +90,7 @@ class PlacementTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             source,_=build_tex(doc,folder,{'p:m':220})
             self.assertLess(source.index(r'\end{multicols}'),source.index(r'\section[标题]'))
-            self.assertIn(r'条件\[\textstyle \special{pdf:dest (shuye-start-p:m)',source)
+            self.assertIn(r'条件\postdisplaypenalty=0 \[\textstyle \special{pdf:dest (shuye-start-p:m)',source)
             self.assertNotIn(r'\par\[',source)
             self.assertNotIn(r'\]\noindent',source)
         self.assertNotIn('fullWidth',doc['blocks'][1])

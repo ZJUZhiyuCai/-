@@ -4,16 +4,17 @@ export function setupJournal({getDoc,change,status,makeButton}){
   makeButton('期刊模板',()=>{
     const dialog=document.createElement('dialog');dialog.style.maxWidth='620px';
     const title=document.createElement('h2');title.textContent='中文学术期刊';dialog.append(title);
-    const hint=document.createElement('p');hint.textContent='首面通栏、正文双栏。为原文段落指定角色，保留原文及上下标；最终效果以 PDF 校样为准。';dialog.append(hint);
-    const inputs={};for(const [key,label]of [['name','中文刊名'],['nameEn','英文刊名'],['volume','卷'],['issue','期'],['year','年'],['date','出版日期'],['shortTitle','续页短标题']]){
+    const hint=document.createElement('p');hint.textContent='首面通栏；正文使用页面设置的栏数，按参考刊式选择单栏或双栏。为原文段落指定角色，保留原文及上下标；最终效果以 PDF 校样为准。';dialog.append(hint);
+    const inputs={};for(const [key,label]of [['name','中文刊名'],['nameEn','英文刊名'],['volume','卷'],['issue','期'],['year','年'],['date','出版日期（中文）'],['dateEn','出版日期（英文）'],['shortTitle','续页短标题']]){
       const row=document.createElement('label');row.textContent=label;const input=document.createElement('input');input.value=getDoc().journal?.[key]||'';input.maxLength=200;row.append(input);dialog.append(row);inputs[key]=input;
     }
     const fontRow=document.createElement('label');fontRow.textContent='西文字体（需服务器已安装）';const latin=document.createElement('select');for(const [value,text] of [['tex-default','TeX 默认'],['times','Times New Roman']]){const option=document.createElement('option');option.value=value;option.textContent=text;latin.append(option);}latin.value=getDoc().journal?.latinFont||'tex-default';fontRow.append(latin);dialog.append(fontRow);
+    const mathRow=document.createElement('label');mathRow.textContent='数学字体（需服务器已安装）';const math=document.createElement('select');for(const [value,text] of [['tex-default','TeX 默认数学字体'],['stix-two','STIX Two Math（参考刊式）']]){const option=document.createElement('option');option.value=value;option.textContent=text;math.append(option);}math.value=getDoc().journal?.mathFont||'tex-default';mathRow.append(math);dialog.append(mathRow);
     const cjkRow=document.createElement('label');cjkRow.textContent='PDF 中文字体';const cjk=document.createElement('select');
     for(const [value,text] of [['fandol','Fandol（TeX 配套）'],['source-han','思源宋体 / 黑体（需安装）'],['windows','Windows 系统字体（需安装）'],['mac','macOS 系统字体（需安装）']]){const option=document.createElement('option');option.value=value;option.textContent=text;cjk.append(option);}
     cjk.value=getDoc().layout.fontSet||'fandol';cjkRow.append(cjk);dialog.append(cjkRow);
     const save=document.createElement('button');save.textContent='应用期刊模板';save.onclick=()=>{
-      try{change(()=>{const doc=getDoc();doc.journal={template:'cn-academic',latinFont:latin.value,normalizeTypography:true,...Object.fromEntries(Object.entries(inputs).map(([k,v])=>[k,v.value]))};doc.layout.fontSet=cjk.value;if(!doc.blocks.some(b=>b.role)){Object.assign(doc.layout,{width:170,height:240,inner:13,outer:13,top:16,bottom:16,columns:2,gap:6,fontSize:8.2,lineHeight:1.55});}});dialog.close();}catch(e){status(e.message,true);}
+      try{change(()=>{const doc=getDoc();doc.journal={template:'cn-academic',latinFont:latin.value,mathFont:math.value,normalizeTypography:true,...Object.fromEntries(Object.entries(inputs).map(([k,v])=>[k,v.value]))};doc.layout.fontSet=cjk.value;if(!doc.blocks.some(b=>b.role)){Object.assign(doc.layout,{width:170,height:240,inner:13,outer:13,top:16,bottom:16,columns:2,gap:6,fontSize:8.2,lineHeight:1.55});}});dialog.close();}catch(e){status(e.message,true);}
     };
     const cancel=document.createElement('button');cancel.textContent='关闭';cancel.onclick=()=>dialog.close();dialog.append(save,cancel);dialog.onclose=()=>dialog.remove();document.body.append(dialog);dialog.showModal();
   });

@@ -1,6 +1,39 @@
 """Break only at outer binary/relation operators; retain all expression tokens."""
 import re
 
+def continues_equation(tex):
+    tail=re.sub(r'\\(?:mathrm|text)\{\s*([=<>+\-])\s*\}',r'\1',tex).rstrip()
+    return bool(re.search(r'(?:[=<>+\-]|\\(?:leq|geq|approx|equiv))$',tail))
+
+def inline_breaks(tex):
+    """Offer breaks between outer list items, without splitting math atoms.
+
+    A single OMML object can contain several comma-separated assignments. A
+    TeX inline box may fit the measure but leave no viable justified text line
+    before it. Break at its outer separators, never inside a fraction, matrix,
+    script or paired delimiter. The source expression remains unchanged.
+    """
+    out=[];depth=0;delimiters=0;environments=0;i=0
+    while i<len(tex):
+        if tex[i]=='\\':
+            environment=re.match(r'\\(begin|end)\{[A-Za-z]+\}',tex[i:])
+            if environment:
+                environments+=1 if environment[1]=='begin' else -1
+                out.append(environment[0]);i+=len(environment[0]);continue
+            separator=re.match(r'\\(?:text|mathrm|symup)\{[,，;；]\}',tex[i:])
+            if separator and not depth and not delimiters and not environments:
+                out.append(separator[0]+r'\allowbreak ');i+=len(separator[0]);continue
+            token=re.match(r'\\(?:[A-Za-z]+|.)',tex[i:])[0]
+            if token==r'\left':delimiters+=1
+            elif token==r'\right':delimiters=max(0,delimiters-1)
+            out.append(token);i+=len(token);continue
+        c=tex[i];out.append(c)
+        if c=='{':depth+=1
+        elif c=='}':depth-=1
+        elif c in ',;' and not depth and not delimiters and not environments:out.append(r'\allowbreak ')
+        i+=1
+    return ''.join(out)
+
 def break_formula(tex,display=True):
     if '\\begin{' in tex:return tex
     # Upright styling of punctuation has no mathematical distinction.

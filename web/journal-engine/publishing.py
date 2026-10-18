@@ -79,6 +79,16 @@ def build_tex(doc,assets_dir,math_widths=None):
     if layout.get('writingMode','horizontal') not in ('horizontal','horizontal-tb') or layout.get('vertical'): raise ValueError('正式 PDF 暂不支持竖排，请切换横排。')
     blocks,by_id=prepare_blocks(doc)
     journal=doc.get('journal')
+    def render_math(value):
+        tex=safe_math(value)
+        if journal and journal.get('mathFont')=='stix-two':
+            # Legacy math alphabet commands may select the text font for Greek
+            # or request a nonexistent bold face. Unicode math has explicit
+            # symbol alphabets; preserve the source style without a fallback.
+            alphabets={'mathrm':'symup','mathbf':'symbfup','mathit':'symit','boldsymbol':'symbfit',
+                       'mathsf':'symsfup','mathtt':'symtt','mathcal':'symcal','mathbb':'symbb','mathfrak':'symfrak'}
+            tex=re.sub(r'\\('+'|'.join(alphabets)+r')\b',lambda m:'\\'+alphabets[m[1]],tex)
+        return tex
     terms=[str(t) for t in doc.get('indexTerms',[]) if str(t).strip()][:1000]
     index_refs={term:['idx-'+str(ti)+'-'+str(bi) for bi,b in enumerate(blocks) if term in str(b.get('text','')) and b.get('type')!='index'] for ti,term in enumerate(terms)}
     if not isinstance(blocks,list) or len(blocks)>10000: raise ValueError('文档块数量无效。')
@@ -96,15 +106,19 @@ def build_tex(doc,assets_dir,math_widths=None):
             out.append(escape(s[start:m.start()])); ident=m.group(1)
             if m.group(2):
                 if m.group(2) not in (formulas or {}): raise ValueError('缺少行内公式定义：'+m.group(2))
-                tex=safe_math(formulas[m.group(2)]);object_id=(owner_id or active_block_id)+':'+m.group(2)
+                tex=render_math(formulas[m.group(2)]);object_id=(owner_id or active_block_id)+':'+m.group(2)
                 punctuation=re.match(r'[，。；：、,.!?;:！？)\]）】]+',s[m.end():])
                 if journal and table_notes is None and math_widths and math_widths.get(object_id,0)>min(active_width,(values['width']-values['inner']-values['outer']-values['gap']*(cols-1))/cols*72.27/25.4)*.65:
                     suffix=r'\text{'+escape(punctuation[0])+'}' if punctuation else ''
                     start=m.end()+(len(punctuation[0]) if punctuation else 0)
                     # Starting horizontal mode before/after a display creates
                     # empty baseline rows. The semantic markers live inside it.
-                    out.append(r'\[\textstyle '+marker(object_id,'start')+math_with_suffix(tex,suffix)+marker(object_id,'end')+r'\]'+(r'\noindent ' if s[start:].strip() else ''))
+                    tail=bool(s[start:].strip())
+                    out.append((r'\postdisplaypenalty=10000 ' if tail else r'\postdisplaypenalty=0 ')+r'\[\textstyle '+marker(object_id,'start')+math_with_suffix(tex,suffix)+marker(object_id,'end')+r'\]'+(r'\noindent ' if tail else ''))
                 else:
+                    if journal and table_notes is None:
+                        from math_layout import inline_breaks
+                        tex=inline_breaks(tex)
                     out.append(r'\allowbreak '+marker(object_id,'start')+r'\('+tex+r'\)'+marker(object_id,'end')+(r'\nobreak ' if punctuation else r'\allowbreak '));start=m.end()
                 continue
             if ident in notes:
@@ -186,6 +200,12 @@ def build_tex(doc,assets_dir,math_widths=None):
 \maxbalancingoverflow=0pt
 \setcounter{tracingmulticols}{2}
 \setlength{\emergencystretch}{2em}
+% Paragraph style groups must not restore the one-shot after-heading hook.
+% Otherwise every later paragraph is treated as the first after the heading,
+% and whole text/table sequences become unnecessarily inseparable.
+\makeatletter
+\newcommand{\ShuyeAfterParagraph}{\if@nobreak\@nobreakfalse\everypar{}\fi}
+\makeatother
 % fancyhdr is activated after geometry so it uses the actual paper width.
 \renewcommand{\headrulewidth}{0.3pt}
 \setlength{\headheight}{18pt}
@@ -195,6 +215,15 @@ def build_tex(doc,assets_dir,math_widths=None):
     if font_set=='source-han':pre+=r'\setCJKmainfont[BoldFont={Source Han Serif SC Bold}]{Source Han Serif SC}\setCJKsansfont[BoldFont={Source Han Sans SC Bold}]{Source Han Sans SC}'+'\n'
     if journal and journal.get('latinFont')=='times':pre+=r'\setmainfont{Times New Roman}'+'\n'
     if journal:
+        math_font=journal.get('mathFont','tex-default')
+        if math_font not in ('tex-default','stix-two'):raise ValueError('数学字体方案无效。')
+        if math_font=='stix-two':pre+=r'\usepackage{unicode-math}\setmathfont{STIX Two Math}'+'\n'
+    if journal:
+        # ctexart defaults to a 1.3 baseline multiplier. Journal sizes already
+        # specify their measured leading; applying that multiplier a second
+        # time inflates body/front-matter/table spacing and changes pagination.
+        pre+=r'\linespread{1}'+'\n'
+        pre+=r'\setlength{\heavyrulewidth}{.75pt}\setlength{\lightrulewidth}{.25pt}'+'\n'
         pre+=r'\setlength{\parskip}{0pt}\setlength{\skip\footins}{5pt}\renewcommand{\footnoterule}{\kern-3pt\hrule width81pt height.3pt\kern2.7pt}'+'\n'
         pre+=r'\makeatletter\renewcommand\footnotesize{\@setfontsize\footnotesize{6.9pt}{8pt}}\makeatother'+'\n'
     pre+=r'\xeCJKDeclareCharClass{CJK}{"2160->"2188}'+'\n'
@@ -208,11 +237,11 @@ def build_tex(doc,assets_dir,math_widths=None):
         small=r'\fontsize{6.9}{8.5}\selectfont '
         pre+=r'\fancyhf{}\fancyhead[LE]{'+small+r'\thepage}\fancyhead[CE]{'+small+name+r'}\fancyhead[RE]{'+small+year+r'}\fancyhead[LO]{'+small+('第'+issue+'期' if issue else '')+r'}\fancyhead[CO]{'+small+escape(journal.get('shortTitle',''))+r'}\fancyhead[RO]{'+small+r'\thepage}'+'\n'
         left=r'\strut '+('第'+volume+'卷' if volume else '')+('第'+issue+'期' if issue else '')+r'\\ '+escape(journal.get('date',''))
-        right=r'\strut '+('Vol. '+volume if volume else '')+(' No. '+issue if issue else '')+r'\\ '+year
+        right=r'\strut '+('Vol. '+volume if volume else '')+(' No. '+issue if issue else '')+r'\\ '+escape(journal.get('dateEn') or journal.get('year',''))
         pre+=r'\fancypagestyle{journalfirst}{\fancyhf{}\fancyhead[C]{'+small+r'\parbox[t]{.24\textwidth}{\raggedright '+left+r'}\parbox[t]{.52\textwidth}{\centering '+r'\strut '+name+r'\\ '+name_en+r'}\parbox[t]{.24\textwidth}{\raggedleft '+right+r'}}}'+"\n"
     pre+=r'\setlength{\columnsep}{'+str(values['gap'])+'mm}\n'+r'\setlength{\parindent}{'+str(values['indent'])+'em}\n'
     pre+=r'\begin{document}\setcounter{page}{'+str(int(values['pageStart']))+'}\n'+r'\fontsize{'+str(values['fontSize'])+'}{'+str(values['fontSize']*values['lineHeight'])+r'}\selectfont'+'\n'
-    if journal:pre+=r'\thispagestyle{journalfirst}\setlength{\abovedisplayskip}{4pt plus 1pt minus 1pt}\setlength{\belowdisplayskip}{4pt plus 1pt minus 1pt}\setlength{\abovedisplayshortskip}{3pt}\setlength{\belowdisplayshortskip}{3pt}\setlength{\multicolsep}{5pt}'+'\n'
+    if journal:pre+=r'\thispagestyle{journalfirst}\setlength{\emergencystretch}{3em}\setlength{\abovedisplayskip}{4pt plus 1pt minus 1pt}\setlength{\belowdisplayskip}{4pt plus 1pt minus 1pt}\setlength{\abovedisplayshortskip}{3pt}\setlength{\belowdisplayshortskip}{3pt}\setlength{\multicolsep}{5pt}'+'\n'
     # Measure at the actual body size. A subsequent compile uses the measurements
     # to promote oversized inline/display mathematics to full-width blocks.
     if journal:
@@ -221,7 +250,7 @@ def build_tex(doc,assets_dir,math_widths=None):
             for m in formulas:
                 if not re.fullmatch(r'[-\w]{1,80}',str(m.get('id',''))):continue
                 measure_id=m['id'] if b.get('type')=='equation' else b.get('id','')+':'+m['id']
-                pre+=r'\setbox0=\hbox{$'+(r'\displaystyle ' if b.get('type')=='equation' else '')+safe_math(m['text'])+r'$}\typeout{SHUYEWIDTH:'+measure_id+r':\the\wd0}'+'\n'
+                pre+=r'\setbox0=\hbox{$'+(r'\displaystyle ' if b.get('type')=='equation' else '')+render_math(m['text'])+r'$}\typeout{SHUYEWIDTH:'+measure_id+r':\the\wd0}'+'\n'
     content=[]; incols=False
     def columns(on,minimum=50):
         nonlocal incols
@@ -247,6 +276,7 @@ def build_tex(doc,assets_dir,math_widths=None):
         if journal and planned[i].get('type')=='heading' and not planned[i].get('role') and (following.get('fullWidth') or following.get('placement')=='full-width'):
             planned[i]={**planned[i],'fullWidth':True}
     blocks=planned
+    paragraph_open=False
     for block_num,b in enumerate(blocks):
         role=b.get('role');front=bool(journal and role in FRONT_ROLES)
         heading_space=values['fontSize']*values['lineHeight']*2
@@ -281,9 +311,11 @@ def build_tex(doc,assets_dir,math_widths=None):
                 size,leading,alignment,bold=ROLE_STYLE[role]
                 align_cmd={'center':r'\centering ','left':r'\raggedright ','justify':''}[alignment]
                 indent=r'\setlength{\parindent}{13.8pt}' if role in ('abstract-zh','keywords-zh','abstract-en','keywords-en') else r'\setlength{\parindent}{0pt}'
+                if role in ('abstract-zh','keywords-zh'):indent+=r'\leftskip=16pt '
+                if role=='classification':text=re.sub(r' {2,}',lambda _:r'\hspace{6em}',text)
                 gap=r'\addvspace{4pt}' if role.startswith('title') else ''
                 if role=='reference':indent=r'\setlength{\parindent}{0pt}\hangindent=8mm\hangafter=1 '
-                content.append(r'\par'+gap+'{'+align_cmd+indent+r'\fontsize{'+str(size)+'}{'+str(leading)+r'}\selectfont '+(r'\bfseries ' if bold else '')+r'\leavevmode '+block_labels+text+marker(b.get('id'),'end')+r'\par}')
+                content.append(r'\par'+gap+'{'+align_cmd+indent+r'\fontsize{'+str(size)+'}{'+str(leading)+r'}\selectfont '+(r'\bfseries ' if bold else '')+r'\leavevmode '+block_labels+text+marker(b.get('id'),'end')+r'\par}\ShuyeAfterParagraph')
                 continue
             if typ=='heading':
                 lev=int(number(b.get('level'),1,1,4));command=['section','subsection','subsubsection','paragraph'][lev-1]
@@ -296,7 +328,15 @@ def build_tex(doc,assets_dir,math_widths=None):
                 # surrounding group discards that hook before the following
                 # paragraph and permits an orphan heading during column balance.
                 short_title=re.sub(r'\\special\{pdf:dest [^}]+\}','',text)
-                content.append(r'\needspace{'+str(round(heading_space,2))+r'pt}\ctexset{'+command+'={format={'+fmt+'}'+spacing+'}}'+chr(92)+command+'['+short_title+']{'+block_labels+text+marker(b.get('id'),'end')+'}');continue
+                # The first heading reserves space for the entire chain. A
+                # second needspace inserts a legal break between the headings.
+                previous_heading=block_num>0 and blocks[block_num-1].get('type')=='heading' and not blocks[block_num-1].get('role')
+                # On a normal page use the exact remaining-height check. The
+                # approximate needspace adds stretch at the heading and can
+                # make a half-empty page cheaper than a later paragraph break.
+                space_command=r'\needspace{' if incols else r'\Needspace{'
+                reserve='' if previous_heading else space_command+str(round(heading_space,2))+r'pt}'
+                content.append(reserve+r'\ctexset{'+command+'={format={'+fmt+'}'+spacing+'}}'+chr(92)+command+'['+short_title+']{'+block_labels+text+marker(b.get('id'),'end')+'}');continue
             style=''
             if 'indentPt' in b: style+=r'\setlength{\parindent}{'+str(number(b['indentPt'],0,0,200))+'pt}'
             elif 'indent' in b: style+=r'\setlength{\parindent}{'+str(number(b['indent'],2,0,20))+'em}'
@@ -307,14 +347,28 @@ def build_tex(doc,assets_dir,math_widths=None):
             # A vertical destination between a heading's no-break penalty and
             # paragraph glue creates a new legal column break. Put text markers
             # on the actual first line; displays already manage their own mode.
-            enter='' if text.lstrip().startswith(r'\[') else r'\leavevmode '
-            content.append('{'+style+enter+block_labels+text+marker(b.get('id'),'end')+r'\par}')
+            enter='' if re.match(r'(?:\\postdisplaypenalty=\d+\s*)?\\\[',text.lstrip()) else r'\leavevmode '
+            follows_equation=block_num+1<len(blocks) and blocks[block_num+1].get('type')=='equation'
+            # A source paragraph and its following display are separate model
+            # objects, but need not be separate TeX paragraphs. Closing the
+            # paragraph first creates a phantom baseline and weakens the
+            # display's native keep-with-introduction penalty. Bridge only a
+            # single-column, normal-body-size run, without crossing column or
+            # font-style boundaries. Both semantic object IDs remain intact.
+            paragraph_open=bool(journal and cols==1 and follows_equation and size==values['fontSize'] and not b.get('bold') and b.get('fontFamily','serif')=='serif')
+            ending='' if paragraph_open else r'\par}\ShuyeAfterParagraph'
+            content.append('{'+style+enter+block_labels+text+marker(b.get('id'),'end')+ending)
+            if journal and not incols and follows_equation and not paragraph_open:content.append(r'\nopagebreak[4]')
         elif typ=='pageBreak': columns(False); content.append(r'\newpage'); columns(True)
         elif typ=='equation':
             if b.get('placement')=='full-width':columns(False)
-            equation=safe_math(b.get('text',''))
+            equation=render_math(b.get('text',''))
             number_text=b.get('equationNumber','');suffix=(r'\text{'+escape(b['equationSuffix'])+'}') if b.get('equationSuffix') else ''
-            content.append(r'\begin{equation*}'+block_labels+math_with_suffix(equation,suffix)+(r'\tag{'+escape(number_text)+'}' if number_text else '')+marker(b.get('id'),'end')+r'\end{equation*}')
+            from math_layout import continues_equation
+            continuation=bool(journal and block_num+1<len(blocks) and blocks[block_num+1].get('type')=='equation' and continues_equation(b.get('text','')+b.get('equationSuffix','')))
+            content.append((r'\postdisplaypenalty=10000 ' if continuation else r'\postdisplaypenalty=0 ')+r'\begin{equation*}'+block_labels+math_with_suffix(equation,suffix)+(r'\tag{'+escape(number_text)+'}' if number_text else '')+marker(b.get('id'),'end')+r'\end{equation*}')
+            if paragraph_open:content.append(r'\par}\ShuyeAfterParagraph');paragraph_open=False
+            if continuation:content.append(r'\nopagebreak[4]')
         elif typ=='image':
             if b.get('placement')=='full-width':columns(False)
             if b.get('wrap','none')!='none': warnings.append('正式 PDF 暂不支持图片环绕，图片按独立块输出。')
@@ -365,7 +419,10 @@ def build_tex(doc,assets_dir,math_widths=None):
             original_heads=heads
             while heads and heads-1 in joined_after: heads+=1
             if heads!=original_heads: warnings.append('合并单元格跨越表头边界，重复表头已扩展至第 '+str(heads)+' 行。')
-            row_heights=[values['fontSize']*1.5 for row in rows]
+            # A TeX strut height excludes its depth. Using a whole line as the
+            # height adds the depth again, inflating every short table row.
+            table_leading=values['fontSize']*(1.25 if journal else values['lineHeight'])
+            row_heights=[table_leading*.7 if journal else values['fontSize']*1.5 for row in rows]
             for (r,c),(rs,cs) in anchors.items():
                 contents='\n'.join(str(rows[rr][cc]) for rr in range(r,r+rs) for cc in range(c,c+cs) if cc<len(rows[rr]) and str(rows[rr][cc]))
                 available=((values['width']-values['inner']-values['outer']-values['gap']*(cols-1))/cols if in_column else values['width']-values['inner']-values['outer'])*72/25.4*sum(widths[c:c+cs])-12
@@ -405,7 +462,7 @@ def build_tex(doc,assets_dir,math_widths=None):
                         elif start is not None:runs.append((start+1,cc));start=None
                     suffix+=''.join(r'\cline{'+str(a)+'-'+str(z)+'}' for a,z in runs)
                 return ' & '.join(cells)+suffix
-            estimated_height=sum(row_heights)+30+16*len(b.get('captionIds',[]))
+            estimated_height=sum(row_heights)+(len(rows)*table_leading*.3 if journal else 0)+30+16*len(b.get('captionIds',[]))
             table_width_pt=(values['width']-values['inner']-values['outer'])*72.27/25.4
             for ri,row in enumerate(rows):
                 extra=0
@@ -420,6 +477,7 @@ def build_tex(doc,assets_dir,math_widths=None):
                 estimated_height+=extra
             keep_table=in_column or bool(journal and len(rows)<=10 and estimated_height<(values['height']-values['top']-values['bottom'])*72.27/25.4*.45)
             env='tabular' if keep_table else 'longtable'
+            if journal:content.append(r'{\fontsize{'+str(values['fontSize'])+'}{'+str(table_leading)+r'}\selectfont ')
             if keep_table: content.append(r'\par\noindent\begin{minipage}{\linewidth}')
             content.append(r'\setlength{\ShuyeTableWidth}{\linewidth}'+r'\begin{'+env+'}{'+spec+'}')
             # Explicit spanning title rows avoid longtable's automatic table number.
@@ -427,7 +485,8 @@ def build_tex(doc,assets_dir,math_widths=None):
             def table_head(continued=False):
                 if text:
                     title=(re.sub(r'\\special\{pdf:dest [^}]+\}','',text)+'（续）') if continued else block_labels+text
-                    content.append(r'\multicolumn{'+str(n)+r'}{@{}c@{}}{\parbox{\ShuyeTableWidth}{\centering '+title+r'}} \\[6pt]')
+                    caption_style=r'\fontsize{7}{9}\selectfont ' if journal else ''
+                    content.append(r'\multicolumn{'+str(n)+r'}{@{}c@{}}{\parbox{\ShuyeTableWidth}{\centering '+caption_style+r'\leavevmode '+title+r'}} \\[6pt]')
                 content.append(r'\hline' if grid else r'\toprule')
                 for ri in range(heads):
                     row=render(ri)
@@ -443,6 +502,7 @@ def build_tex(doc,assets_dir,math_widths=None):
             content.append(marker(b.get('id'),'end'))
             if keep_table: content.append(r'\end{minipage}\par\smallskip')
             elif cols>1: warnings.append('长表格以通栏输出，表格前后恢复双栏。')
+            if journal:content.append('}')
         elif typ=='toc': columns(False); content.append(r'\tableofcontents\clearpage'); columns(True)
         elif typ=='index':
             content.append(r'\section*{'+(text or '索引')+'}')

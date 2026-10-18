@@ -70,7 +70,7 @@ def inspect_output(output, document=None, compilation=None):
     if document.get('journal'):
         required=['title-zh','authors-zh','affiliation-zh','abstract-zh','keywords-zh','title-en','authors-en','affiliation-en','abstract-en','keywords-en']
         diagnostics.extend({'code':'JOURNAL_FIELD_MISSING','severity':'error','message':'首面缺少字段：'+role} for role in required if not any(b.get('role')==role and str(b.get('text','')).strip() for b in document.get('blocks',[])))
-        diagnostics.extend({'code':'JOURNAL_METADATA_REVIEW','severity':'warning','message':'出版字段待编辑确认：'+key} for key in ('name','nameEn','volume','issue','year','date') if not str(document['journal'].get(key,'')).strip())
+        diagnostics.extend({'code':'JOURNAL_METADATA_REVIEW','severity':'warning','message':'出版字段待编辑确认：'+key} for key in ('name','nameEn','volume','issue','year','date','dateEn') if not str(document['journal'].get(key,'')).strip())
         import re
         for b in document.get('blocks',[]):
             if b.get('role')=='classification' and re.search(r'文章编号\s*[:：]\s*$',b.get('text','')):

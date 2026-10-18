@@ -5,7 +5,8 @@ export function validateJournal(raw,blocks){
   if(raw.normalizeTypography!==undefined&&typeof raw.normalizeTypography!=='boolean')throw Error('期刊字体规范选项无效。');
   const config={template:'cn-academic',normalizeTypography:raw.normalizeTypography!==false};
   if(raw.latinFont!==undefined){if(!['tex-default','times'].includes(raw.latinFont))throw Error('西文字体方案无效');config.latinFont=raw.latinFont;}
-  for(const k of ['name','nameEn','volume','issue','year','date','shortTitle']){
+  if(raw.mathFont!==undefined){if(!['tex-default','stix-two'].includes(raw.mathFont))throw Error('数学字体方案无效');config.mathFont=raw.mathFont;}
+  for(const k of ['name','nameEn','volume','issue','year','date','dateEn','shortTitle']){
     if(raw[k]!==undefined){if(typeof raw[k]!=='string'||raw[k].length>200)throw Error('期刊字段无效：'+k);config[k]=raw[k];}
   }
   return config;

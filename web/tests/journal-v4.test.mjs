@@ -49,3 +49,13 @@ test('malformed source evidence and journal settings cannot silently normalize a
  }
  assert.throws(()=>assembleBook(doc(),[doc()]),/期刊/);
 });
+test('journal math font survives MCP, schema and editor round trips without accepting arbitrary fonts',()=>{
+ const op=operation.parse({op:'set_journal',journal:{template:'cn-academic',mathFont:'stix-two',dateEn:'Jan. 2030'}});
+ const changed=applyOperations(doc(),[op]).document;
+ assert.equal(validateDocument(documentSchema.parse(changed)).journal.mathFont,'stix-two');
+ assert.equal(validateDocument(documentSchema.parse(changed)).journal.dateEn,'Jan. 2030');
+ for(const mathFont of ['unknown','',null,42]){
+  assert.throws(()=>operation.parse({op:'set_journal',journal:{template:'cn-academic',mathFont}}));
+  assert.throws(()=>validateDocument({...doc(),journal:{template:'cn-academic',mathFont}}));
+ }
+});
