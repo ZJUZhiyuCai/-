@@ -16,11 +16,12 @@ TEX_DEFAULT=Path.home()/'AppData/Roaming/TinyTeX/bin/windows/xelatex.exe'
 SAFE_COMMANDS=set('frac dfrac tfrac sqrt sum prod int oint iint iiint lim min max log ln exp sin cos tan cot sec csc arcsin arccos arctan sinh cosh tanh alpha beta gamma delta epsilon varepsilon zeta eta theta vartheta iota kappa lambda mu nu xi pi varpi rho varrho sigma varsigma tau upsilon phi varphi chi psi omega Gamma Delta Theta Lambda Xi Pi Sigma Upsilon Phi Psi Omega left right middle cdot times div pm mp le leq ge geq neq approx equiv sim simeq propto in notin subset supset subseteq supseteq cup cap emptyset infinity infty partial nabla forall exists neg land lor to rightarrow leftarrow leftrightarrow Rightarrow Leftarrow Leftrightarrow mapsto overline underline hat widehat bar vec dot ddot tilde widetilde overbrace underbrace text mathrm mathbf mathit mathsf mathtt mathcal mathbb operatorname limits nolimits displaystyle textstyle scriptstyle scriptscriptstyle quad qquad space thinspace backslash lceil rceil lfloor rfloor lbrace rbrace langle rangle lvert rvert vert Vert colon ldots cdots vdots ddots binom dbinom tbinom overset underset stackrel big Big bigg Bigg bmod pmod mod det gcd ker hom dim sup inf Pr begin end'.split())
 SAFE_COMMANDS.update('boldsymbol mathfrak genfrac check breve coprod bigcup bigcap'.split())
 SAFE_ENVS={'matrix','pmatrix','bmatrix','Bmatrix','vmatrix','Vmatrix','cases','aligned','gathered'}
+TEXT_SUPERSCRIPTS=dict(zip('⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁿⁱ',list('0123456789+')+[r'\ensuremath{-}']+list('=()ni')))
 def escape(text):
     # Unicode subscript numerals are often absent from text/math font cmaps.
     # Typeset the same numeral using TeX's subscript positioning; retain the
     # original Unicode string in the document model and import evidence.
-    return ''.join((r'\textsubscript{'+str(ord(c)-0x2080)+'}') if c in '₀₁₂₃₄₅₆₇₈₉' else (r'\ShuyeTextSymbol{'+format(ord(c),'X')+'}{'+c+'}') if '\u0370'<=c<='\u03ff' or c=='µ' else {'\\':r'\textbackslash{}','{':r'\{','}':r'\}','$':r'\$','&':r'\&','#':r'\#','%':r'\%','_':r'\_','^':r'\textasciicircum{}','~':r'\textasciitilde{}','\n':r'\newline ','\t':r'\quad '}.get(c,c) for c in str(text) if ord(c)>=32 or c in '\n\t')
+    return ''.join((r'\textsuperscript{'+TEXT_SUPERSCRIPTS[c]+'}') if c in TEXT_SUPERSCRIPTS else (r'\textsubscript{'+str(ord(c)-0x2080)+'}') if c in '₀₁₂₃₄₅₆₇₈₉' else (r'\ShuyeTextSymbol{'+format(ord(c),'X')+'}{'+c+'}') if '\u0370'<=c<='\u03ff' or c=='µ' else {'\\':r'\textbackslash{}','{':r'\{','}':r'\}','$':r'\$','&':r'\&','#':r'\#','%':r'\%','_':r'\_','^':r'\textasciicircum{}','~':r'\textasciitilde{}','\n':r'\newline ','\t':r'\quad '}.get(c,c) for c in str(text) if ord(c)>=32 or c in '\n\t')
 def safe_math(value):
     s=str(value)
     if len(s)>30000 or any(ord(c)<32 and c not in '\n\t\r' for c in s): raise ValueError('数学公式过长或含控制字符。')
@@ -160,7 +161,7 @@ def build_tex(doc,assets_dir,math_widths=None):
                             lines.append(r'\noindent\hangindent=5.5em\hangafter=1 '+line_tex+r'\par')
                         body=''.join(lines)
                     body=marker('note:'+ident,'start')+body+marker('note:'+ident,'end')
-                    out.append(r'\begingroup'+custom+r'\renewcommand{\thefootnote}{'+note_markers[ident]+r'}\footnote['+str(note_numbers[ident])+']{'+body+r'}\endgroup');note_seen.add(ident)
+                    out.append(r'\begingroup'+custom+r'\renewcommand{\thefootnote}{'+note_markers[ident]+r'}\footnote['+str(note_numbers[ident])+']{'+body+r'}\endgroup{}');note_seen.add(ident)
 
             else: out.append(escape(m.group(0))); warnings.append('缺少脚注内容：'+ident)
             start=m.end()

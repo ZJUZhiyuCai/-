@@ -8,6 +8,7 @@ import re
 import uuid
 import xml.etree.ElementTree as ET
 from docx_numbering import Numbering,check_fields,format_number,val
+from docx_evidence import SourceEvidence
 
 NS = {'w':'http://schemas.openxmlformats.org/wordprocessingml/2006/main','m':'http://schemas.openxmlformats.org/officeDocument/2006/math','a':'http://schemas.openxmlformats.org/drawingml/2006/main','r':'http://schemas.openxmlformats.org/officeDocument/2006/relationships'}
 W, M = '{'+NS['w']+'}', '{'+NS['m']+'}'
@@ -29,6 +30,8 @@ def import_docx(data):
         if 'word/_rels/document.xml.rels' in z.namelist():
             for r in xml(z.read('word/_rels/document.xml.rels')):
                 if r.get('TargetMode')!='External': rels[r.get('Id')]=posixpath.normpath('word/'+r.get('Target',''))
+        evidence=SourceEvidence(root,z,rels)
+        legacy_counts=evidence.ole_objects(root)
         styles=xml(z.read('word/styles.xml')) if 'word/styles.xml' in z.namelist() else None
         numbering=Numbering(xml(z.read('word/numbering.xml')) if 'word/numbering.xml' in z.namelist() else None,styles,warnings)
         character_styles={s.get(W+'styleId'):s for s in (styles if styles is not None else []) if s.get(W+'type')=='character'}
@@ -48,7 +51,7 @@ def import_docx(data):
         settings=xml(z.read('word/settings.xml')) if 'word/settings.xml' in z.namelist() else None
         notes=[]
         for e in root.iter():
-            if local(e) in ('ins','del','moveFrom','moveTo'):
+            if e.tag in {W+n for n in ('ins','del','moveFrom','moveTo')}:
                 warnings.append('修订或域 '+local(e)+' 尚未执行接受/拒绝/更新策略，请先在原稿中确认。')
         field_stats={};field_count=check_fields(root,warnings,field_stats)
         if field_count:
@@ -120,16 +123,16 @@ def import_docx(data):
                             try:
                                 from PIL import Image
                                 with Image.open(BytesIO(image)) as im:
-                                    if im.width*im.height>25000000 or getattr(im,'n_frames',1)!=1: raise ValueError('多帧或超过 25 MP 的 TIFF')
+                                    if im.width*im.height>25000000 or getattr(im,'n_frames',1)!=1: raise ValueError(str(im.width)+'×'+str(im.height)+' 像素、'+str(getattr(im,'n_frames',1))+' 帧；仅支持单帧且不超过 25 MP 的 TIFF')
                                     if im.mode not in ('1','L','LA','RGB','RGBA','P'): raise ValueError('TIFF 色彩/位深 '+im.mode+' 不能无损转换到 PNG')
                                     im.load();out=BytesIO();im.save(out,format='PNG');image=out.getvalue();ext='png'
                             except (ImportError,OSError,ValueError) as error:
-                                warnings.append('TIFF 未导入：'+path+'；'+str(error));return
+                                evidence.add('DOCX_IMAGE_UNSUPPORTED','TIFF 未导入：'+path+'；'+str(error),e,path);return
                             except Image.DecompressionBombError:
-                                warnings.append('TIFF 像素数量超过安全限制，未导入：'+path);return
+                                evidence.add('DOCX_IMAGE_UNSUPPORTED','TIFF 像素数量超过安全限制，未导入：'+path,e,path);return
                         if len(image)<=5*1024*1024: extras.append({'id':uid(),'type':'image','src':'data:image/'+('jpeg' if ext=='jpg' else ext)+';base64,'+base64.b64encode(image).decode(),'width':80,'text':''})
-                        else: warnings.append('图片超过 5 MB，未导入：'+path)
-                    else: warnings.append('未支持或外链图片未导入：'+(path or '外链'))
+                        else: evidence.add('DOCX_IMAGE_UNSUPPORTED','图片超过 5 MB，未导入：'+path,e,path)
+                    else: evidence.add('DOCX_IMAGE_UNSUPPORTED','未支持或外链图片未导入：'+(path or '外链'),e,path)
                     return
                 if k=='drawing' and not any(local(c)=='blip' for c in e.iter()): warnings.append('图片或绘图没有可读取的位图，未导入，请核对原稿。')
                 if k in ('pict','object'): warnings.append('旧式绘图/OLE 对象无法转换，请核对原稿。')
@@ -139,9 +142,10 @@ def import_docx(data):
             if not in_table and len(inline_math)==1:
                 remainder=text.replace('[[math:'+inline_math[0]['id']+']]','').strip()
                 number_match=re.fullmatch(r'[（(]([0-9]+(?:[a-z])?)[）)]',remainder)
-                if not remainder or number_match or remainder in ('。','，','；','.',',',';'):
+                percent_number=re.fullmatch(r'([%％])\s*[（(]([0-9]+(?:[a-z])?)[）)]',remainder) if text.lstrip().startswith('[[math:') else None
+                if not remainder or number_match or percent_number or remainder in ('。','，','；','.',',',';'):
                     formula=inline_math[0]
-                    return [{'id':uid(),'type':'equation','text':formula['text'],**{k:formula[k] for k in ('sourceOmml','sourceSha256')},'equationNumber':number_match[1] if number_match else '', 'equationSuffix':'' if number_match else remainder}]+extras
+                    return [{'id':uid(),'type':'equation','text':formula['text'],**{k:formula[k] for k in ('sourceOmml','sourceSha256')},'equationNumber':number_match[1] if number_match else percent_number[2] if percent_number else '', 'equationSuffix':percent_number[1] if percent_number else '' if number_match else remainder}]+extras
             if text.strip():
                 style=p.find('w:pPr/w:pStyle',NS); name=style.get(W+'val','') if style is not None else ''
                 match=re.search(r'(?:heading|标题)\s*([1-4])',name,re.I)
@@ -242,7 +246,8 @@ def import_docx(data):
         walk(body)
         if any(n.startswith('word/header') or n.startswith('word/footer') for n in z.namelist()): warnings.append('原 Word 页眉页脚未导入；请在版式设置中重建。')
         warnings=list(dict.fromkeys(warnings))
-        source_math=sum(1 for e in root.iter(M+'oMath'))
+        source_omml_math=sum(1 for e in root.iter(M+'oMath'))
+        source_math=source_omml_math+legacy_counts['sourceLegacyMath']
         output_math=sum(1 if b['type']=='equation' else len(b.get('inlineMath',[])) for b in blocks)
         source_images=sum(1 for e in root.iter() if local(e)=='blip')
         output_images=sum(b['type']=='image' for b in blocks)
@@ -254,4 +259,7 @@ def import_docx(data):
             diagnostics.append({'code':'DOCX_REVIEW' if severity=='warning' else 'DOCX_CONTENT_REVIEW','severity':severity,'message':message})
         report={'kind':'docx','sourceSha256':hashlib.sha256(data).hexdigest(),'sourceBytes':len(data),'counts':{'sourceMath':source_math,'sourceDisplayMath':sum(1 for e in root.iter(M+'oMathPara')),'sourceTables':sum(1 for e in root.iter(W+'tbl')),'importedTables':sum(b['type']=='table' for b in blocks),'importedMath':output_math,'sourceImages':source_images,'importedImages':output_images,'sourceNumberedParagraphs':numbering.source_count,'importedNumberedParagraphs':numbering.imported_count},'diagnostics':diagnostics}
         report['counts'].update(field_stats)
+        report['counts'].update(legacy_counts,sourceOmmlMath=source_omml_math)
+        report['diagnostics'].extend(evidence.diagnostics)
+        warnings.extend(d['message'] for d in evidence.diagnostics)
         return {'blocks':blocks,'notes':notes,'warnings':warnings,'importReports':[report]}

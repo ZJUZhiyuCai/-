@@ -21,6 +21,8 @@ try{
  assert.equal(caps.environment.fonts.resolver,'XeLaTeX/fontspec');
  assert.equal(caps.environment.fonts.defaultCjkFontSet,process.env.SHUYE_FONTSET||'windows');
  assert.equal(caps.environment.fonts.profiles.cjk.fandol.available,true);
+ const inspectBytes=(await readFile(new URL('../tests/fixtures/journal-complex.docx',import.meta.url))).toString('base64');
+ const inspected=await call('inspect_journal_docx',{base64:inspectBytes});assert.equal(inspected.importable,true);assert.equal(inspected.importReports[0].counts.sourceMath,6);assert.equal((await call('list_projects')).projects.length,0);
  const imported=await call('import_journal_docx',{projectId:'synthetic',title:'期刊验收',base64:(await readFile(new URL('../tests/fixtures/journal-complex.docx',import.meta.url))).toString('base64')});
  assert.equal(imported.document.importReports[0].counts.sourceMath,6);assert.equal(imported.document.importReports[0].counts.importedMath,6);
  const saved=await call('replace_project',{projectId:'synthetic',expectedRevision:1,document:journalProfile(imported.document)});

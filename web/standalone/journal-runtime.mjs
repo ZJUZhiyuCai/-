@@ -49,6 +49,7 @@ export async function createJournalRuntime({directory,python='python3',engineDir
  return {
   capabilities,
   async importDocx(base64){ready();return track(worker({method:'import',base64}));},
+  async inspectDocx(base64){ready();return track(worker({method:'inspect',base64}));},
   start(owner,record){
    assertJournalFonts(record.document,capabilities.environment?.fonts);
    // Reserve before any filesystem await: simultaneous requests cannot both start.

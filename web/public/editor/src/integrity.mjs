@@ -28,7 +28,13 @@ export function validateImportReports(raw) {
     if(!Array.isArray(r.diagnostics)||r.diagnostics.length>10000)throw Error('导入诊断记录无效。');
     const diagnostics=r.diagnostics.map(d=>{
       if(!d||!['error','warning','info'].includes(d.severity)||typeof d.code!=='string'||d.code.length>80||typeof d.message!=='string'||d.message.length>4000)throw Error('导入诊断内容无效。');
-      return {code:d.code,severity:d.severity,message:d.message};
+      const result={code:d.code,severity:d.severity,message:d.message};
+      for(const key of ['sourcePart','sourcePath','sourceAsset'])if(d[key]!==undefined){
+        if(typeof d[key]!=='string'||!d[key].length||d[key].length>2000)throw Error('导入来源位置无效。');
+        result[key]=d[key];
+      }
+      if(d.assetSha256!==undefined){if(!/^[a-f0-9]{64}$/.test(d.assetSha256))throw Error('导入资产指纹无效。');result.assetSha256=d.assetSha256;}
+      return result;
     });
     const counts={};for(const [k,v]of Object.entries(r.counts||{})){if(!/^[a-zA-Z]{1,50}$/.test(k)||!Number.isInteger(v)||v<0||v>1000000)throw Error('导入计数无效。');counts[k]=v;}
     return {kind:'docx',sourceSha256:r.sourceSha256,sourceBytes:r.sourceBytes,counts,diagnostics};

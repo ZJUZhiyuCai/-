@@ -19,6 +19,7 @@ export function showJournalReport(result){
    }
    const position=pages.size?`PDF 第 ${[...pages].sort((a,b)=>a-b).join('、')} 页 · `:'';
    append(li,'strong',position+(d.message||d.code));
+   if(d.sourcePath){const detail=append(li,'p',`原稿位置：${d.sourcePart||''}${d.sourcePath}${d.sourceAsset?' · '+d.sourceAsset:''}`);detail.style.cssText='font-size:12px;overflow-wrap:anywhere';}
    const locations=d.sourceLocations||d.candidateLocations||[];
    if(locations.length)append(li,'p','候选来源（需对照 PDF 确认具体位置）：');
    for(const loc of locations){
