@@ -14,10 +14,12 @@ node standalone/build.mjs
 输出包已包含 `journal-engine/`，不含 Python、TeX 或商业字体。Linux 安装 Python 3.12 与 XeLaTeX；Ubuntu CI 使用以下 TeX 包：
 
 ```sh
-sudo apt-get install texlive-xetex texlive-lang-chinese texlive-latex-extra texlive-fonts-recommended
+sudo apt-get install --no-install-recommends texlive-xetex texlive-lang-chinese texlive-latex-extra texlive-fonts-recommended texlive-plain-generic latex-cjk-common
 python3 -m venv /opt/shuye-python
 /opt/shuye-python/bin/pip install -r /opt/shuye/current/journal-engine/requirements.txt
 ```
+
+`texlive-plain-generic` 提供 `ulem.sty`，`latex-cjk-common` 提供注音需要的 `ruby.sty`。不要依赖系统恰好装有推荐包。运行完整 Python 回归测试时安装 `requirements-test.txt`，其中另含检查 PDF 字形坐标的 `pdfplumber`。测试需在可写的源码副本中运行；生产发布目录仍保持只读。
 
 在既有私有配置中添加 `journal`，保留原有目录、域名和端口：
 

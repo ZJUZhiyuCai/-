@@ -1,0 +1,3 @@
+-r requirements.txt
+# Actual PDF glyph geometry assertions in test_journal_original.py.
+pdfplumber==0.11.9
