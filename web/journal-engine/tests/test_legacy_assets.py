@@ -12,7 +12,7 @@ from legacy_fixtures import char,line,template,mtef,ole,emf
 from mtef import convert_ole
 from mtef_reader import MtefError
 from docx_import import import_docx
-from emf import convert_emfs,read_emf,validate_vector_source
+from emf import convert_emfs,read_emf,validate_vector_source,validate_vector_pdf
 from publishing import build_tex,render_pdf
 from proof import render_proof,text_geometry
 from test_docx_v2 import package
@@ -68,6 +68,23 @@ class LegacyTests(unittest.TestCase):
 
 
 class EmfTests(unittest.TestCase):
+    def test_static_page_view_is_allowed_but_actions_and_foreign_destinations_are_not(self):
+        from pypdf import PdfWriter
+        from pypdf.generic import ArrayObject,NameObject,NumberObject,NullObject,DictionaryObject,TextStringObject
+        def asset(view):
+            writer=PdfWriter();page=writer.add_blank_page(width=200,height=100)
+            writer._root_object[NameObject('/OpenAction')]=view(page.indirect_reference)
+            buffer=BytesIO();writer.write(buffer);return buffer.getvalue()
+        validate_vector_pdf(asset(lambda ref:ArrayObject([ref,NameObject('/XYZ'),NullObject(),NullObject(),NumberObject(0)])))
+        validate_vector_pdf(asset(lambda ref:ArrayObject([ref,NameObject('/Fit')])))
+        for value in [
+            lambda ref:DictionaryObject({NameObject('/S'):NameObject('/JavaScript'),NameObject('/JS'):TextStringObject('test')}),
+            lambda ref:ArrayObject([TextStringObject('outside.pdf'),NameObject('/Fit')]),
+            lambda ref:ArrayObject([NumberObject(1),NameObject('/Fit')]),
+            lambda ref:ArrayObject([ref,NameObject('/XYZ'),TextStringObject('unsafe'),NullObject(),NumberObject(0)]),
+        ]:
+            with self.assertRaises(ValueError):validate_vector_pdf(asset(value))
+
     def test_record_bounds_and_normalization_ledger(self):
         raw=emf('（a）');normalized,text,changes,fonts=read_emf(raw)
         self.assertEqual(text,'(a)');self.assertEqual([n['to'] for n in changes],['(',')']);self.assertNotEqual(raw,normalized)

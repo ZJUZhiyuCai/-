@@ -68,12 +68,26 @@ def read_emf(data):
 
 def validate_vector_pdf(data):
     from pypdf import PdfReader
+    from pypdf.generic import ArrayObject,NullObject,NumberObject,FloatObject
+    import math
     if len(data)>5*1024*1024: raise ValueError('矢量 PDF 超过 5 MB')
     pdf=PdfReader(BytesIO(data),strict=True)
     if pdf.is_encrypted or len(pdf.pages)!=1: raise ValueError('矢量资产必须为单页未加密 PDF')
     root=pdf.trailer['/Root'];page=pdf.pages[0]
-    if any(k in root for k in ('/OpenAction','/AA','/Names','/AcroForm')) or any(k in page for k in ('/Annots','/AA')):
-        raise ValueError('矢量 PDF 不得含动作、附件、注释或表单')
+    forbidden=[k for k in ('/AA','/Names','/AcroForm') if k in root]+[k for k in ('/Annots','/AA') if k in page]
+    if forbidden:raise ValueError('矢量 PDF 不得含动作、附件、注释或表单：'+','.join(forbidden))
+    # LibreOffice 24 emits an initial page-view destination on Linux. A PDF
+    # destination array is not an executable action dictionary; accept only
+    # this page and a standard view with numeric/null operands. PdfWriter's
+    # page-only copy below does not carry the source catalog into the asset.
+    if '/OpenAction' in root:
+        view=root['/OpenAction'];valid=False
+        if isinstance(view,ArrayObject) and len(view)>=2:
+            target=view[0];ref=page.indirect_reference
+            local=target==ref or isinstance(target,NumberObject) and target==0
+            count={'/XYZ':3,'/Fit':0,'/FitH':1,'/FitV':1,'/FitR':4,'/FitB':0,'/FitBH':1,'/FitBV':1}.get(str(view[1]))
+            valid=local and count is not None and len(view)==count+2 and all(isinstance(v,NullObject) or isinstance(v,(NumberObject,FloatObject)) and math.isfinite(float(v)) for v in view[2:])
+        if not valid:raise ValueError('矢量 PDF 含非本页静态视图的 OpenAction')
     if not 0<float(page.mediabox.width)<=2000 or not 0<float(page.mediabox.height)<=2000: raise ValueError('矢量 PDF 尺寸无效')
     for font in page.get('/Resources',{}).get('/Font',{}).values():
         f=font.get_object();desc=f.get('/FontDescriptor')
