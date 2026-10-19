@@ -1,0 +1,115 @@
+{
+  "format": "open-typesetter",
+  "version": 3,
+  "title": "QA-v62-图表文字流校样",
+  "blocks": [],
+  "layout": {
+    "width": 170,
+    "height": 240
+  },
+  "composition": {
+    "masters": [
+      {
+        "id": "master",
+        "name": "页眉页脚",
+        "objects": [
+          {
+            "id": "head",
+            "type": "text",
+            "x": 20,
+            "y": 8,
+            "width": 130,
+            "height": 10,
+            "fontSize": 9,
+            "text": "书页中文排版测试"
+          },
+          {
+            "id": "foot",
+            "type": "text",
+            "x": 20,
+            "y": 225,
+            "width": 130,
+            "height": 8,
+            "fontSize": 9,
+            "text": "{page}"
+          }
+        ]
+      }
+    ],
+    "pages": [
+      {
+        "id": "page1",
+        "masterId": "master",
+        "objects": [
+          {
+            "id": "frame1",
+            "type": "text",
+            "x": 20,
+            "y": 25,
+            "width": 130,
+            "height": 180,
+            "fontSize": 11,
+            "lineHeight": 1.5
+          }
+        ]
+      }
+    ],
+    "stories": [
+      {
+        "id": "story",
+        "name": "表格与注释",
+        "text": "",
+        "frameIds": [
+          "frame1"
+        ],
+        "blocks": [
+          {
+            "id": "h",
+            "type": "paragraph",
+            "text": "中文排版测试 ABC 123"
+          },
+          {
+            "id": "p",
+            "type": "paragraph",
+            "text": "正文测试[^n1]。"
+          },
+          {
+            "id": "t",
+            "type": "table",
+            "headerRows": 1,
+            "rows": [
+              [
+                "项目",
+                "数据"
+              ],
+              [
+                "示例1",
+                "123"
+              ],
+              [
+                "示例2",
+                "456"
+              ]
+            ],
+            "columnWidths": [
+              1,
+              1
+            ],
+            "merges": []
+          },
+          {
+            "id": "end",
+            "type": "paragraph",
+            "text": "图表注释测试。"
+          }
+        ],
+        "notes": [
+          {
+            "id": "n1",
+            "text": "合成稿注释。"
+          }
+        ]
+      }
+    ]
+  }
+}

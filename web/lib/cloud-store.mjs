@@ -1,3 +1,4 @@
+import {documentFingerprint} from '../public/editor/src/project-sync.mjs';
 import {checkDocument,applyOperations} from './operations.mjs';
 import {id as idSchema} from './schema.mjs';
 const componentCount=doc=>doc.blocks.length+(doc.composition?.pages.reduce((n,p)=>n+p.objects.length,0)||0)+(doc.composition?.masters.reduce((n,m)=>n+m.objects.length,0)||0);
@@ -15,7 +16,9 @@ export class CloudStore {
   async create(id,raw){idSchema.parse(id);const document=checkDocument(raw);if((await this.list()).length>=200)throw Error('PROJECT_LIMIT_200');const objectKey=await this.put(document),updatedAt=new Date().toISOString();try{await this.stmt('INSERT INTO projects (owner,id,title,revision,object_key,history,updated_at,block_count,archived) VALUES (?,?,?,1,?,?,?,?,0)',this.owner,id,document.title,objectKey,'[]',updatedAt,componentCount(document)).run();}catch(e){if(String(e).includes('UNIQUE')){await this.bucket.delete(objectKey);throw Error('PROJECT_ALREADY_EXISTS');}const committed=await this.recoveredWrite(id,objectKey);if(committed)return {projectId:id,revision:committed.revision,document,updatedAt:committed.updated_at,recoveredAfterStorageError:true};throw e;}return {projectId:id,revision:1,document,updatedAt};}
   async change(id,expectedRevision,mutate,{dryRun=false}={}){
     const row=await this.row(id);if(row.revision!==expectedRevision)throw Error('REVISION_CONFLICT');
-    const result=await mutate(await this.read(row.object_key));const document=checkDocument(result.document);
+    const original=await this.read(row.object_key),reports=(original.importReports||[]).map(documentFingerprint);
+    const result=await mutate(original),document=checkDocument(result.document);
+    for(const report of reports)if(!document.importReports.some(r=>documentFingerprint(r)===report))throw Error('IMPORT_REPORT_REMOVAL');
     if(dryRun)return {...result,document,projectId:id,revision:row.revision,dryRun:true};
     const objectKey=await this.put(document),updatedAt=new Date().toISOString();
     const history=[{key:row.object_key,revision:row.revision,title:row.title,updatedAt:row.updated_at},...JSON.parse(row.history)].slice(0,10);

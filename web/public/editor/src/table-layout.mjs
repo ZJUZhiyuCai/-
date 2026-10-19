@@ -31,6 +31,21 @@ export function validateTable(table) {
 export function cellMerge(table, row, col) {
   return (table.merges || []).find(m => row >= m.row && row < m.row + m.rowspan && col >= m.col && col < m.col + m.colspan);
 }
+export function validateCellImages(blocks){
+  const byId=new Map(blocks.map(b=>[b.id,b])),owned=new Set();
+  for(const table of blocks){
+    if(table.cellImages===undefined)continue;
+    if(table.type!=='table'||!Array.isArray(table.cellImages)||table.cellImages.length>10000)throw Error('单元格图片列表无效。');
+    for(const cell of table.cellImages){
+      if(!cell||!Number.isInteger(cell.row)||!Number.isInteger(cell.col)||cell.row<0||cell.col<0||table.rows[cell.row]?.[cell.col]===undefined)throw Error('单元格图片位置无效。');
+      const image=byId.get(cell.imageId),merge=cellMerge(table,cell.row,cell.col);
+      if(!image||image.type!=='image'||owned.has(image.id)||image.anchor||image.captionIds?.length||image.sideTextIds?.length||image.text||(image.wrap&&image.wrap!=='none')||(image.placement&&image.placement!=='auto'))throw Error('单元格图片不存在、重复归属或含独立定位/题注。');
+      if(merge&&(merge.rowspan!==1||merge.row!==cell.row||merge.col!==cell.col))throw Error('单元格图片只支持普通格或横向合并起点。');
+      owned.add(image.id);
+    }
+  }
+  return owned;
+}
 export function cellDisplayText(table, row, col) {
   const merge = cellMerge(table,row,col);
   if (!merge) return table.rows[row]?.[col] ?? '';
@@ -39,6 +54,15 @@ export function cellDisplayText(table, row, col) {
     if (table.rows[r][c] !== '') text.push(table.rows[r][c]);
   }
   return text.join('\n');
+}
+
+export function cellDisplayMarks(table,row,col){
+  const merge=cellMerge(table,row,col)||{row,col,rowspan:1,colspan:1};const marks=[];let offset=0;
+  for(let r=merge.row;r<merge.row+merge.rowspan;r++)for(let c=merge.col;c<merge.col+merge.colspan;c++){
+    const text=table.rows[r][c];if(!text)continue;
+    for(const m of table.cellMarks?.find(x=>x.row===r&&x.col===c)?.marks||[])marks.push({...m,start:m.start+offset,end:m.end+offset});offset+=text.length+1;
+  }
+  return marks;
 }
 
 /** Half-open row groups. No legal page boundary cuts a vertical merge. */
@@ -101,11 +125,14 @@ export function resizeTable(table,axis,index,remove=false) {
   const length=isRow?rows.length:rows[0].length;
   if(!Number.isInteger(index)||index<0||index>(remove?length-1:length))throw Error('行列位置越界。');
   if(remove&&length===1)throw Error('表格必须至少保留一行一列。');
+  if(remove&&table.cellImages?.some(c=>c[axis]===index))throw Error('该行列含单元格图片，请先显式解除归属或移走图片。');
   if(isRow){if(remove)rows.splice(index,1);else rows.splice(index,0,Array(rows[0].length).fill(''));}
   else for(const row of rows){if(remove)row.splice(index,1);else row.splice(index,0,'');}
   const pos=isRow?'row':'col',span=isRow?'rowspan':'colspan';
   const merges=clean.merges.map(m=>{const next={...m};if(remove){if(index<m[pos])next[pos]--;else if(index<m[pos]+m[span])next[span]--;}else {if(index<=m[pos])next[pos]++;else if(index<m[pos]+m[span])next[span]++;}return next;}).filter(m=>m.rowspan>0&&m.colspan>0&&(m.rowspan>1||m.colspan>1));
   const columnWidths=[...clean.columnWidths];if(!isRow){if(remove)columnWidths.splice(index,1);else columnWidths.splice(index,0,100/length);}
   let headerRows=table.headerRows??1;if(isRow&&index<headerRows)headerRows+=remove?-1:1;
-  return {...table,...validateTable({rows,merges,columnWidths}),headerRows:Math.min(rows.length,headerRows)};
+  const cellMarks=(table.cellMarks||[]).filter(c=>!remove||c[pos]!==index).map(c=>({...c,[pos]:c[pos]+(remove?(c[pos]>index?-1:0):(c[pos]>=index?1:0))}));
+  const cellImages=(table.cellImages||[]).map(c=>({...c,[pos]:c[pos]+(remove?(c[pos]>index?-1:0):(c[pos]>=index?1:0))}));
+  return {...table,...validateTable({rows,merges,columnWidths}),...(table.cellMarks?{cellMarks}:{}),...(table.cellImages?{cellImages}:{}),headerRows:Math.min(rows.length,headerRows)};
 }

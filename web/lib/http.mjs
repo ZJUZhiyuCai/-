@@ -17,9 +17,9 @@ export async function handle(request,env,mcp=false){
       if(input.method==='ping')return success({});
       if(input.method==='tools/list')return success({tools:toolList()});
       if(input.method!=='tools/call')return json({jsonrpc:'2.0',id:input.id??null,error:{code:-32601,message:'Method not found'}});
-      try{const store=new CloudStore(env.DB,env.BUCKET,request.headers.get('oai-authenticated-user-id'));const value=await callTool(store,input.params?.name,input.params?.arguments);return success({content:[{type:'text',text:JSON.stringify(value)}],structuredContent:value,isError:false});}catch(e){return success({content:[{type:'text',text:e.message}],isError:true});}
+      try{const store=Object.assign(new CloudStore(env.DB,env.BUCKET,request.headers.get('oai-authenticated-user-id')),{journalRuntime:env.JOURNAL_RUNTIME});const value=await callTool(store,input.params?.name,input.params?.arguments);return success({content:[{type:'text',text:JSON.stringify(value)}],structuredContent:value,isError:false});}catch(e){return success({content:[{type:'text',text:e.message}],isError:true});}
     }
-    const store=new CloudStore(env.DB,env.BUCKET,request.headers.get('oai-authenticated-user-id'));
+    const store=Object.assign(new CloudStore(env.DB,env.BUCKET,request.headers.get('oai-authenticated-user-id')),{journalRuntime:env.JOURNAL_RUNTIME});
     return json(await callTool(store,input.tool,input.arguments));
   }catch(e){return json({error:e.message},errorStatus(e));}
 }

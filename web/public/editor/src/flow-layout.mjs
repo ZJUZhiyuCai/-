@@ -44,11 +44,14 @@ export function safeFlowCut(points,start,count,ruby=[]) {
   const offset=points.slice(0,start).join('').length,end=offset+points.slice(start,start+count).join('').length;
   const hit=ruby.find(r=>r.start<end&&r.end>end);
   if(hit)count=Array.from(points.slice(start).join('').slice(0,Math.max(0,hit.start-offset))).length;
+  // Punctuation adjustment may enter a structural token; protect after it too.
+  const rest=points.slice(start).join(''),cut=points.slice(start,start+count).join('').length;
+  for(const m of rest.matchAll(/\[\^[-\w]+\]|\[\[(?:math|ref|cite):[-\w]+\]\]/g))if(m.index<cut&&m.index+m[0].length>cut)count=Array.from(rest.slice(0,m.index)).length;
   return count;
 }
 export function minimumFlowUnit(points,start,ruby=[]) {
   const text=points.slice(start).join(''),offset=points.slice(0,start).join('').length;
-  const hit=ruby.find(r=>r.start===offset),note=/^\[\^[-\w]+\]/.exec(text);
+  const hit=ruby.find(r=>r.start===offset),note=/^(?:\[\^[-\w]+\]|\[\[(?:math|ref|cite):[-\w]+\]\])/.exec(text);
   return hit?Array.from(text.slice(0,hit.end-offset)).length:note?Array.from(note[0]).length:1;
 }
 // Count physical text lines, excluding annotation text. Marks can produce several
@@ -78,7 +81,7 @@ function physicalLines(el,vertical) {
  * following normal paragraphs until clear/end; they are never silently repeated.
  */
 export function paginateFlow(doc,measure,entries,renderBlock) {
-  const l={...doc.layout,_notes:doc.notes||[]},g=flowGeometry(l),vertical=g.writingMode==='vertical-rl';
+  const l={...doc.layout,_notes:doc.notes||[],_images:doc._images},g=flowGeometry(l),vertical=g.writingMode==='vertical-rl';
   const warnings=[],pages=[];let column=0,host;
   const capacity=vertical?g.width:g.height;
   measure.style.width=`${g.width}px`;measure.style.height='auto';measure.style.writingMode='horizontal-tb';
@@ -112,7 +115,7 @@ export function paginateFlow(doc,measure,entries,renderBlock) {
   function rowsText(b,rows){return rows.map(i=>b.rows[i].join(' ')).join('\n');}
   let blocks=doc.blocks.map(b=>['toc','index'].includes(b.type)?{...b,_entries:entries[b.id]||[]}:b);
   if(l._notes.length){
-    blocks=[...blocks,{id:'_flow-notes-title',type:'heading',text:'注释',level:1,_generated:true},...l._notes.map((n,i)=>({id:`_flow-note-${n.id}`,type:'paragraph',text:`${i+1}　${n.text}`,indent:0,_generated:true}))];
+    blocks=[...blocks,{id:'_flow-notes-title',type:'heading',text:'注释',level:1,_generated:true},...l._notes.map((n,i)=>({id:`_flow-note-${n.id}`,type:'paragraph',text:`${n.marker??i+1}　${n.text}`,indent:0,_generated:true}))];
     if(l.notesMode!=='endnote')warnings.push('竖排或图片绕排使用文末注释；本轮不支持该组合的页底脚注。');
   }
   if(vertical&&blocks.some(b=>b.type==='image'&&b.wrap!=='none'&&b.wrap))warnings.push('竖排暂不支持图片左右绕排，图片已按独占块显示。');
@@ -123,7 +126,7 @@ export function paginateFlow(doc,measure,entries,renderBlock) {
     const b=blocks[blockIndex];
     if(b.type==='pageBreak'){page();continue;}
     if(['table','toc','index'].includes(b.type)) {
-      const table=b.type==='table',groups=table?tableRowGroups(b):b._entries.map((_,i)=>({start:i,end:i+1}));
+      const table=b.type==='table',groups=table?(b.cellImages?.length?[{start:0,end:b.rows.length}]:tableRowGroups(b)):b._entries.map((_,i)=>({start:i,end:i+1}));
       const header=table?headerRowCount(b):{count:0,warnings:[]};warnings.push(...header.warnings);
       if(!groups.length){const t=trial(b,b.text);if(!t.fits&&hasContent())next();place(b,b.text,trial(b,b.text));continue;}
       let at=0;

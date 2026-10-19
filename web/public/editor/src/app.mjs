@@ -51,6 +51,7 @@ function status(message, error = false) {
   $("status").classList.toggle("error", error);
 }
 function persist() {
+  document.dispatchEvent(new Event('shuye:document-changed'));
   if (protectAutosave) {
     $("saveState").textContent = "原自动保存已保留，请另存工程";
     return;
@@ -191,7 +192,7 @@ async function render() {
   if(result.warnings.length){const summary=document.createElement('summary');summary.textContent=`排版提示（${result.warnings.length} 项）`;diagnostic.append(summary);for(const message of result.warnings){const p=document.createElement('p');p.textContent=message;diagnostic.append(p);}}
   lastPages = result.pages;
   const fragment = document.createDocumentFragment(),
-    l = {...doc.layout,_notes:viewDoc.notes||[]};
+    l = {...doc.layout,_notes:viewDoc.notes||[],_images:new Map(viewDoc.blocks.filter(b=>b.type==='image').map(b=>[b.id,b]))};
   const mm = 96 / 25.4;
   result.pages.forEach((columns, index) => {
     const wrap = document.createElement("div");
@@ -231,7 +232,7 @@ async function render() {
         el.dataset.start = part.start;
         el.dataset.end = part.end;
         if (part.block.id === selected) el.classList.add("selected");
-        if (['paragraph','heading'].includes(part.block.type) && !part.readOnly && !part.block.ruby?.length) {
+        if (['paragraph','heading'].includes(part.block.type) && !part.readOnly && !part.block.ruby?.length && !part.block.inlineMath?.length) {
           el.contentEditable = "plaintext-only";
           el.spellcheck = false;
           el.setAttribute(
@@ -309,7 +310,8 @@ async function render() {
   });
   $("pages").replaceChildren(fragment);
   $("paperMeta").textContent =
-    `${l.width} × ${l.height} mm　${l.columns} 栏　${result.pages.length} 页`;
+    `${l.width} × ${l.height} mm　${l.columns} 栏　${result.pages.length} 页${doc.journal ? "（结构编辑预览）" : ""}`;
+  $("paperMeta").nextElementSibling.textContent = doc.journal ? "首面、锚点与最终分页请查看「全文期刊 PDF」" : "单击纸面即可编辑";
   $("stats").textContent =
     `${doc.blocks.reduce((n, b) => n + Array.from(b.text).length + (b.rows||[]).flat().reduce((s,t)=>s+Array.from(t).length,0), 0).toLocaleString()} 字符　/　${result.pages.length} 页`;
   let css = $("printStyle");
@@ -550,6 +552,7 @@ $("fileInput").onchange = async (e) => {
     status("文稿超过导入限制（工程 100 MB，其他 20 MB），请分卷处理。", true);
     return;
   }
+  let replacementStarted=false;
   try {
     let imported,
       warnings = [];
@@ -593,6 +596,7 @@ $("fileInput").onchange = async (e) => {
     if (!confirm(`打开“${f.name}”并替换当前文稿？当前文稿可通过撤销恢复。`))
       return;
     await change(() => {
+      replacementStarted=true;
       doc = imported;
       selected = doc.blocks[0]?.id;
     });
@@ -602,8 +606,16 @@ $("fileInput").onchange = async (e) => {
     } else status("文稿已导入");
   } catch (err) {
     status(err.message, true);
+    if (extnameIsDocx(f.name)) {
+      const d=document.createElement('dialog');d.className='workspace-dialog';
+      const h=document.createElement('h2');h.textContent=replacementStarted?'导入后显示失败 · 可撤销恢复原稿':'导入未完成 · 当前文稿未替换';
+      const details=document.createElement('pre');details.style.whiteSpace='pre-wrap';details.textContent=err.message;
+      const close=document.createElement('button');close.textContent=replacementStarted?'关闭并检查文稿':'保留原稿并关闭';close.onclick=()=>d.close();
+      d.append(h,details,close);d.onclose=()=>d.remove();document.body.append(d);d.showModal();
+    }
   }
 };
+function extnameIsDocx(name){return /\.docx$/i.test(name);}
 $("addImage").onclick = () => $("imageInput").click();
 $("imageInput").onchange = async (e) => {
   const f = e.target.files[0];

@@ -48,3 +48,10 @@ test('rich story MCP edits address cells, merge/split, row insertion, paragraphs
  const before=await store.get('rich-tools');await assert.rejects(()=>run('story_table_resize',{blockId:'table',axis:'row',index:7,remove:true}),/UNREFERENCED/);
  assert.deepEqual(await store.get('rich-tools'),before);assert.equal(before.document.composition.stories[0].blocks[1].rows[32][0],'新增行');
 });
+
+test('import diagnostics cannot be erased by replacement or a mutating writer',async()=>{
+ const {store}=fixture(),document=doc();document.importReports=[{kind:'docx',sourceSha256:'a'.repeat(64),sourceBytes:100,counts:{sourceMath:1},diagnostics:[{code:'review',severity:'warning',message:'需要核对'}]}];
+ await store.create('evidence',document);
+ await assert.rejects(()=>store.change('evidence',1,d=>{d.importReports=[];return {document:d};}),/IMPORT_REPORT_REMOVAL/);
+ assert.equal((await store.get('evidence')).revision,1);
+});
