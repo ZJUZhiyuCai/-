@@ -64,3 +64,20 @@ test('MCP rejects stale proof by default and binds diagnostics and pages to its 
   await assert.rejects(()=>callTool(store,'get_journal_proof_page',{proofId:meta.proofId,page:1}),/PAGE_NOT_FOUND/);
  }finally{await f.cleanup();}
 });
+
+test('MCP rechecks the project after reading proof artifacts, including explicitly allowed old PDFs',async()=>{
+ let revision=1;
+ const meta={proofId:'proof-race',projectId:'p',revision:1,status:'complete'};
+ const report={geometry:{status:'COMPLETE',characters:1,outside:[],pages:[{widthPt:100,heightPt:100,lines:[]}]},semanticLayout:{objects:{}}};
+ const store={owner:'alice',get:async()=>({revision}),journalRuntime:{
+  status:async()=>meta,
+  report:async()=>{revision=2;return report;},
+  pdf:async()=>{revision=2;return 'JVBERg==';}
+ }};
+ await assert.rejects(()=>callTool(store,'download_journal_pdf',{proofId:meta.proofId}),/STALE_PROOF/);
+ revision=1;
+ const allowed=await callTool(store,'download_journal_pdf',{proofId:meta.proofId,acknowledgeStale:true});
+ assert.equal(allowed.stale,true);assert.equal(allowed.revision,1);
+ revision=1;assert.equal((await callTool(store,'get_journal_proof',{proofId:meta.proofId})).stale,true);
+ revision=1;assert.equal((await callTool(store,'get_journal_proof_page',{proofId:meta.proofId,page:1})).stale,true);
+});

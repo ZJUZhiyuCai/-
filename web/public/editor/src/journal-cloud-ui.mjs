@@ -15,7 +15,8 @@ export function setupJournalCloud({api,connection,getDoc,button,status}){
    const bytes=new Uint8Array(await file.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
    const projectId='journal-'+crypto.randomUUID(),r=await api('import_journal_docx',{projectId,title:file.name.replace(/\.docx$/i,''),base64:btoa(binary)});
    if(connection.projectId!==previousProject||documentFingerprint(getDoc())!==before){status('期刊工程已保存到项目库。导入期间的新输入仍保留，请从项目库打开新工程。');return;}
-   await connection.open(projectId);history.replaceState(null,'','?project='+projectId);
+   if(await connection.open(projectId)===false){status('期刊工程已保存到项目库。当前打开操作已被其他工程操作取代，请从项目库打开新工程。');return;}
+   history.replaceState(null,'','?project='+projectId);
    const counts=r.document.importReports[0].counts;
    status(`已导入 ${counts.importedMath}/${counts.sourceMath} 个数学区、${counts.importedImages} 张图。请在“期刊模板”和右侧“期刊角色”指定首面字段。`);
   }catch(e){status(e.message,true);}finally{importing=false;}
