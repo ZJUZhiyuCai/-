@@ -55,6 +55,14 @@ def inspect_output(output, document=None, compilation=None):
     report['geometry']=text_geometry(output['pdf'])
     report['layoutWarnings']=compilation.get('warnings',[])
     report['compileMessages']=compilation.get('compileMessages',[])
+    report['compileDiagnostics']=compilation.get('compileDiagnostics',[])
+    objects=report.get('semanticLayout',{}).get('objects',{})
+    for item in report['compileDiagnostics']:
+        for location in item.get('sourceLocations',[]):
+            bounds=objects.get(location.get('objectId'),{})
+            if bounds.get('start') and bounds.get('end'):
+                location['pages']=[bounds['start']['page'],bounds['end']['page']]
+        item['candidateLocations']=[{'objectId':ident,**objects[ident]} for ident in item.get('candidateObjectIds',[]) if ident in objects]
     report['discardedLayoutTrials']=compilation.get('discardedLayoutTrials',[])
     report['renderer']={k:compilation[k] for k in ('engine','engineVersion','fontSet') if k in compilation}
     if document:
@@ -63,6 +71,7 @@ def inspect_output(output, document=None, compilation=None):
     diagnostics=[dict(d,sourceSha256=r['sourceSha256']) for r in document.get('importReports',[]) for d in r['diagnostics']]
     diagnostics.extend(report['geometry']['outside'])
     diagnostics.extend(report.get('semanticLayout',{}).get('diagnostics',[]))
+    diagnostics.extend(report['compileDiagnostics'])
     for b in document.get('blocks',[]):
         for m in ([b] if b.get('type')=='equation' else b.get('inlineMath',[])):
             if 'sourceOmml' in m and hashlib.sha256(m['sourceOmml'].encode('utf-8')).hexdigest()!=m.get('sourceSha256'):
@@ -76,6 +85,8 @@ def inspect_output(output, document=None, compilation=None):
             if b.get('role')=='classification' and re.search(r'文章编号\s*[:：]\s*$',b.get('text','')):
                 diagnostics.append({'code':'JOURNAL_METADATA_REVIEW','severity':'warning','message':'原稿文章编号为空，需编辑补全；系统未编造编号。','blockId':b['id']})
     for warning in report['layoutWarnings']:
+        if report['compileDiagnostics'] and any(s in warning for s in ('缺字','字体形状替代','超出版心')):
+            continue
         if any(s in warning for s in ('缺字','字体形状替代','超出版心','超过一页','高于版心','缺少脚注')):
             diagnostics.append({'code':'TEX_LAYOUT_ERROR','severity':'error','message':warning})
     for font in report.get('fonts',[]):

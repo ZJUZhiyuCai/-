@@ -15,12 +15,13 @@ def main():
         # Compile, inspect fonts and read geometry: checking the executable alone
         # misses absent TeX packages and Python modules on a fresh deployment.
         import PIL
+        from font_inventory import probe_fonts
         result = render_proof({'journal': {'template': 'cn-academic'},
                               'layout': {'fontSet': 'fandol'},
                               'blocks': [{'id': 'probe', 'type': 'paragraph', 'text': '期刊运行时检查'}]})
         if result['report']['geometry']['status'] != 'COMPLETE' or result['report']['compileMessages']:
             raise ValueError('JOURNAL_RUNTIME_PROBE_FAILED')
-        print(json.dumps({'engine': result['report']['renderer'], 'python': sys.version.split()[0]}))
+        print(json.dumps({'engine': result['report']['renderer'], 'python': sys.version.split()[0], 'fonts': probe_fonts()}))
     elif request['method'] == 'import':
         data = base64.b64decode(request['base64'], validate=True)
         result = import_docx(data)

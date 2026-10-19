@@ -1,4 +1,5 @@
 import {documentFingerprint} from './project-sync.mjs';
+import {showJournalReport} from './journal-report-ui.mjs';
 
 export function setupJournalCloud({api,connection,getDoc,button,status}){
  const saveFile=(name,data,type)=>{const url=URL.createObjectURL(new Blob([data],{type})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);};
@@ -36,6 +37,7 @@ export function setupJournalCloud({api,connection,getDoc,button,status}){
   saveFile(`${getDoc().title}-校样报告.json`,JSON.stringify(result,null,2),'application/json');
   const errors=result.report.quality.diagnostics.filter(d=>d.severity==='error');
   status(`${result.pages} 页 PDF 和报告已下载；${result.report.formulaCoverage.total} 个数学区。${errors.length?`预检有 ${errors.length} 项阻断，请按报告修复。`:'请逐页核对公式和版面后交编辑验收。'}`,!!errors.length);
+  showJournalReport(result);
  }
  button('全文期刊 PDF',async()=>{
   if(!connection.projectId)throw Error('请先保存到云端');

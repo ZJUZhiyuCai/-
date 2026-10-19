@@ -20,7 +20,7 @@ def escape(text):
     # Unicode subscript numerals are often absent from text/math font cmaps.
     # Typeset the same numeral using TeX's subscript positioning; retain the
     # original Unicode string in the document model and import evidence.
-    return ''.join((r'\textsubscript{'+str(ord(c)-0x2080)+'}') if c in '₀₁₂₃₄₅₆₇₈₉' else {'\\':r'\textbackslash{}','{':r'\{','}':r'\}','$':r'\$','&':r'\&','#':r'\#','%':r'\%','_':r'\_','^':r'\textasciicircum{}','~':r'\textasciitilde{}','\n':r'\newline ','\t':r'\quad '}.get(c,c) for c in str(text) if ord(c)>=32 or c in '\n\t')
+    return ''.join((r'\textsubscript{'+str(ord(c)-0x2080)+'}') if c in '₀₁₂₃₄₅₆₇₈₉' else (r'\ShuyeTextSymbol{'+format(ord(c),'X')+'}{'+c+'}') if '\u0370'<=c<='\u03ff' or c=='µ' else {'\\':r'\textbackslash{}','{':r'\{','}':r'\}','$':r'\$','&':r'\&','#':r'\#','%':r'\%','_':r'\_','^':r'\textasciicircum{}','~':r'\textasciitilde{}','\n':r'\newline ','\t':r'\quad '}.get(c,c) for c in str(text) if ord(c)>=32 or c in '\n\t')
 def safe_math(value):
     s=str(value)
     if len(s)>30000 or any(ord(c)<32 and c not in '\n\t\r' for c in s): raise ValueError('数学公式过长或含控制字符。')
@@ -229,6 +229,11 @@ def build_tex(doc,assets_dir,math_widths=None):
 \usepackage[normalem]{ulem}
 \usepackage[latin,nooverlap]{ruby}
 \newCJKfontfamily\kaifamily{SHUYEKAI}
+% Latin Modern text lacks Greek. Preserve the original Unicode code point and
+% existing text font whenever it has the glyph (e.g. Times). A text-font fallback
+% keeps units upright and avoids silently turning micromoles into moles.
+\newfontfamily\ShuyeSymbolFont[BoldFont=FandolSong-Bold.otf,ItalicFont=FandolKai-Regular.otf,BoldItalicFont=FandolKai-Regular.otf]{FandolSong-Regular.otf}
+\DeclareRobustCommand{\ShuyeTextSymbol}[2]{\iffontchar\font"#1\relax#2\else{\ShuyeSymbolFont #2}\fi}
 \newlength{\ShuyeTableWidth}
 \newsavebox{\ShuyeSideBox}
 \newsavebox{\ShuyeCellBox}
@@ -316,8 +321,8 @@ def build_tex(doc,assets_dir,math_widths=None):
             elif b.get('type')=='paragraph' and widest>col_width-16:b={**b,'fullWidth':True}
             if widest>full_width-24:
                 from math_layout import break_formula
-                if b.get('type')=='equation':b={**b,'text':break_formula(b['text'])}
-                else:b={**b,'inlineMath':[{**m,'text':break_formula(m['text'],False) if math_widths.get(b.get('id','')+':'+m['id'],0)>full_width-24 else m['text']} for m in b.get('inlineMath',[])]}
+                if b.get('type')=='equation':b={**b,'text':break_formula(b['text'],width_ratio=(full_width-24)/widest)}
+                else:b={**b,'inlineMath':[{**m,'text':break_formula(m['text'],False,width_ratio=(full_width-24)/math_widths[b.get('id','')+':'+m['id']]) if math_widths.get(b.get('id','')+':'+m['id'],0)>full_width-24 else m['text']} for m in b.get('inlineMath',[])]}
         planned.append(b)
     # A heading must share the column measure of the text it introduces.
     # Otherwise multicols balances it into an isolated right-hand heading.
@@ -429,6 +434,12 @@ def build_tex(doc,assets_dir,math_widths=None):
                 reserve='' if previous_heading else space_command+str(round(heading_space,2))+r'pt}'
                 content.append(reserve+r'\ctexset{'+command+'={format={'+fmt+'}'+spacing+'}}'+chr(92)+command+'['+short_title+']{'+block_labels+text+marker(b.get('id'),'end')+'}');continue
             style=''
+            if journal and formulas:
+                # Dense inline math offers few stretchable text spaces. TeX's
+                # emergency pass otherwise prefers an overfull single line to
+                # a legal, shorter line. This changes break selection only;
+                # it neither scales glyphs nor adds space to the final measure.
+                style+=r'\setlength{\emergencystretch}{.5\linewidth}'
             if 'indentPt' in b: style+=r'\setlength{\parindent}{'+str(number(b['indentPt'],0,0,200))+'pt}'
             elif 'indent' in b: style+=r'\setlength{\parindent}{'+str(number(b['indent'],2,0,20))+'em}'
             if b.get('bold'): style+=r'\bfseries '
@@ -484,7 +495,11 @@ def build_tex(doc,assets_dir,math_widths=None):
             caption_text=''.join(marker(c,'start')+styled(by_id[c],table_notes)+marker(c,'end')+r'\par ' for c in b.get('captionIds',[]))
             if caption_text:text=(text+r'\par ' if text else '')+caption_text
             cell_styles={(c['row'],c['col']):c['marks'] for c in b.get('cellMarks',[])}
-            def cell_plain(r,c):return styled({'id':b.get('id'),'text':str(rows[r][c]),'marks':cell_styles.get((r,c),[]),'inlineMath':b.get('inlineMath',[])},table_notes) if cell_styles.get((r,c)) else plain(str(rows[r][c]),formula_map,table_notes)
+            def cell_plain(r,c):
+                value=styled({'id':b.get('id'),'text':str(rows[r][c]),'marks':cell_styles.get((r,c),[]),'inlineMath':b.get('inlineMath',[])},table_notes) if cell_styles.get((r,c)) else plain(str(rows[r][c]),formula_map,table_notes)
+                # Permit TeX's ordinary word hyphenation for the first word in
+                # a p-column as well (e.g. an English scientific table header).
+                return r'\hspace{0pt}'+value if re.match(r'[A-Za-z]',str(rows[r][c]).lstrip()) else value
             cell_images={}
             for entry in b.get('cellImages',[]):cell_images.setdefault((entry['row'],entry['col']),[]).append(by_id[entry['imageId']])
             def cell_text(r,c):
@@ -642,5 +657,6 @@ def render_pdf(doc, evidence_dir=None):
             if any('Missing character:' in line for line in messages): warnings.append('存在字体缺字，请检查 PDF 并更换字体。')
             if any('LaTeX Font Warning:' in line for line in messages): warnings.append('存在字体形状替代，请核对 PDF 中的粗体、斜体和数学字形。')
             pdf=(folder/'book.pdf').read_bytes()
-            return {'pdf':pdf,'compileMessages':messages,'discardedLayoutTrials':trials,'warnings':list(dict.fromkeys(warnings)),'fontSet':resolve_font_set(doc.get('layout',{})),'objectPositions':read_positions(pdf),'engine':'XeLaTeX','engineVersion':subprocess.run([exe,'--version'],capture_output=True,text=True,timeout=10).stdout.splitlines()[0]}
+            from compile_report import compiler_report
+            return {'pdf':pdf,'compileMessages':messages,'compileDiagnostics':compiler_report(messages,source,doc),'discardedLayoutTrials':trials,'warnings':list(dict.fromkeys(warnings)),'fontSet':resolve_font_set(doc.get('layout',{})),'objectPositions':read_positions(pdf),'engine':'XeLaTeX','engineVersion':subprocess.run([exe,'--version'],capture_output=True,text=True,timeout=10).stdout.splitlines()[0]}
     finally: _LOCK.release()
