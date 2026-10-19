@@ -21,7 +21,13 @@ def main():
                               'blocks': [{'id': 'probe', 'type': 'paragraph', 'text': '期刊运行时检查'}]})
         if result['report']['geometry']['status'] != 'COMPLETE' or result['report']['compileMessages']:
             raise ValueError('JOURNAL_RUNTIME_PROBE_FAILED')
-        print(json.dumps({'engine': result['report']['renderer'], 'python': sys.version.split()[0], 'fonts': probe_fonts()}))
+        import importlib.util
+        import os
+        import shutil
+        imports={'legacyMath':{'format':'MTEF 5','available':importlib.util.find_spec('olefile') is not None},
+                 'emf':{'available':bool(os.environ.get('SHUYE_SOFFICE') or shutil.which('soffice')) and importlib.util.find_spec('pypdfium2') is not None,
+                        'renderer':'LibreOffice Draw','verification':'dependencies detected; each asset must pass conversion and text checks'}}
+        print(json.dumps({'engine': result['report']['renderer'], 'python': sys.version.split()[0], 'fonts': probe_fonts(),'imports':imports}))
     elif request['method'] in ('import', 'inspect'):
         data = base64.b64decode(request['base64'], validate=True)
         result = import_docx(data)

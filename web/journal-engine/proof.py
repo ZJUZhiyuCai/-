@@ -6,6 +6,7 @@ An incomplete check never becomes a production approval.
 from io import BytesIO
 import hashlib
 import json
+import base64
 from journal import final_positions,relation_report
 
 
@@ -72,10 +73,30 @@ def inspect_output(output, document=None, compilation=None):
     diagnostics.extend(report['geometry']['outside'])
     diagnostics.extend(report.get('semanticLayout',{}).get('diagnostics',[]))
     diagnostics.extend(report['compileDiagnostics'])
+    legacy={'formulas':0,'characters':0,'structures':0,'emptySourceObjects':0,'editedFormulas':0,'verifiedSources':0}
+    vectors=[]
     for b in document.get('blocks',[]):
         for m in ([b] if b.get('type')=='equation' else b.get('inlineMath',[])):
             if 'sourceOmml' in m and hashlib.sha256(m['sourceOmml'].encode('utf-8')).hexdigest()!=m.get('sourceSha256'):
                 diagnostics.append({'code':'OMML_SOURCE_HASH_MISMATCH','severity':'error','message':'原始公式来源摘要不一致','blockId':b.get('id'),'formulaId':m.get('id')})
+            if m.get('legacySource'):
+                from mtef import convert_ole
+                import re
+                source=m['legacySource'];legacy['formulas']+=1
+                try:
+                    raw=base64.b64decode(source['data'],validate=True);converted=convert_ole(raw)
+                    if hashlib.sha256(raw).hexdigest()!=source['sha256'] or any(source[k]!=converted[k] for k in ('mtefSha256','characters','structures','empty')) or source['originalTex']!=converted['text']:raise ValueError('MTEF 来源或转换记录不一致')
+                    if source.get('preview') and hashlib.sha256(base64.b64decode(source['preview']['data'],validate=True)).hexdigest()!=source['preview']['sha256']:raise ValueError('MTEF 原预览摘要不一致')
+                    legacy['verifiedSources']+=1;legacy['characters']+=converted['characters'];legacy['structures']+=converted['structures'];legacy['emptySourceObjects']+=int(converted['empty'])
+                    original=converted['text'];current=m.get('text','')
+                    number=re.search(r'(?:\\ )+\(([0-9]+)\)\s*$',original)
+                    if current!=original and not (number and m.get('equationNumber')==number[1] and current==original[:number.start()]):legacy['editedFormulas']+=1
+                except (ValueError,ImportError,OSError,KeyError) as error:
+                    diagnostics.append({'code':'MTEF_SOURCE_INVALID','severity':'error','message':str(error),'blockId':b.get('id'),'formulaId':m.get('id')})
+        if b.get('vectorSource'):
+            s=b['vectorSource'];vectors.append({'blockId':b['id'],'sourceAsset':s['sourceAsset'],'sourceSha256':s['sha256'],'pdfSha256':s['pdfSha256'],'sourceTextCharacters':len(s['text']),'compatibilityGlyphChanges':len(s['normalizations']),'outputKind':'vector PDF'})
+    report['legacyMathCoverage']=legacy;report['vectorAssets']=vectors
+    if legacy['editedFormulas']:diagnostics.append({'code':'MTEF_EDITED','severity':'warning','message':str(legacy['editedFormulas'])+' 处公式在原生转换后有内容编辑，须核对原稿。'})
     if document.get('journal'):
         required=['title-zh','authors-zh','affiliation-zh','abstract-zh','keywords-zh','title-en','authors-en','affiliation-en','abstract-en','keywords-en']
         diagnostics.extend({'code':'JOURNAL_FIELD_MISSING','severity':'error','message':'首面缺少字段：'+role} for role in required if not any(b.get('role')==role and str(b.get('text','')).strip() for b in document.get('blocks',[])))

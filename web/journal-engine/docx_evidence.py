@@ -26,11 +26,11 @@ class SourceEvidence:
                 counts[tag] = counts.get(tag, 0)+1
                 stack.append((child, path+'/'+tag+'['+str(counts[tag])+']'))
 
-    def add(self, code, message, element, asset=None):
+    def add(self, code, message, element, asset=None, severity='error'):
         path = self.paths[element]
         # Very deep documents retain the root and nearest object ancestry.
         if len(path) > 1800: path = path[:200]+'/…/'+path[-1500:]
-        diagnostic = {'code': code, 'severity': 'error', 'message': message,
+        diagnostic = {'code': code, 'severity': severity, 'message': message,
                       'sourcePart': 'word/document.xml', 'sourcePath': path}
         if asset:
             diagnostic['sourceAsset'] = asset[:1000]
@@ -43,6 +43,7 @@ class SourceEvidence:
     def ole_objects(self, root):
         objects = list(root.iter(O+'OLEObject'))
         for obj in objects:
+            if legacy_math(obj): continue # The importer attempts native conversion.
             kind = '旧式公式' if legacy_math(obj) else 'OLE 对象'
             self.add('DOCX_LEGACY_MATH' if legacy_math(obj) else 'DOCX_OLE_UNSUPPORTED',
                      kind+'未导入：'+obj.get('ProgID', '未知类型')[:200]+'。请在原稿中转为可编辑的 Word 公式或受支持对象后重新导入；不可直接交付。',

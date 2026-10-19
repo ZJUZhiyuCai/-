@@ -1,3 +1,4 @@
+import {legacySource} from './asset-sources.mjs';
 import {journalDiagnostics} from './journal.mjs';
 // Inline formulas have stable IDs. The marker is atomic in the editable text;
 // its TeX lives outside text so edits cannot silently move or duplicate it.
@@ -8,7 +9,7 @@ export function validateInlineMath(block) {
   if(raw.length&&!['paragraph','heading','table'].includes(block.type))throw Error('行内公式只能位于正文、标题或表格。');
   const ids=new Set(),items=raw.map(m=>{
     if(!m||!/^[-\w]{1,80}$/.test(m.id)||ids.has(m.id)||typeof m.text!=='string'||m.text.length>20000)throw Error('行内公式 ID 重复或内容无效。');
-    ids.add(m.id);const result={id:m.id,text:m.text};if(m.sourceOmml!==undefined||m.sourceSha256!==undefined){if(typeof m.sourceOmml!=='string'||!m.sourceOmml.length||m.sourceOmml.length>300000||!(/^[a-f0-9]{64}$/).test(m.sourceSha256))throw Error('公式来源记录无效。');result.sourceOmml=m.sourceOmml;result.sourceSha256=m.sourceSha256;}return result;
+    ids.add(m.id);const result={id:m.id,text:m.text};if(m.sourceOmml!==undefined||m.sourceSha256!==undefined){if(typeof m.sourceOmml!=='string'||!m.sourceOmml.length||m.sourceOmml.length>300000||!(/^[a-f0-9]{64}$/).test(m.sourceSha256))throw Error('公式来源记录无效。');result.sourceOmml=m.sourceOmml;result.sourceSha256=m.sourceSha256;}if(m.legacySource!==undefined)result.legacySource=legacySource(m.legacySource);return result;
   });
   const used=new Set();
   for(const text of [block.text,...(block.rows||[]).flat()]){

@@ -21,7 +21,7 @@ def escape(text):
     # Unicode subscript numerals are often absent from text/math font cmaps.
     # Typeset the same numeral using TeX's subscript positioning; retain the
     # original Unicode string in the document model and import evidence.
-    return ''.join((r'\textsuperscript{'+TEXT_SUPERSCRIPTS[c]+'}') if c in TEXT_SUPERSCRIPTS else (r'\textsubscript{'+str(ord(c)-0x2080)+'}') if c in '₀₁₂₃₄₅₆₇₈₉' else (r'\ShuyeTextSymbol{'+format(ord(c),'X')+'}{'+c+'}') if '\u0370'<=c<='\u03ff' or c=='µ' else {'\\':r'\textbackslash{}','{':r'\{','}':r'\}','$':r'\$','&':r'\&','#':r'\#','%':r'\%','_':r'\_','^':r'\textasciicircum{}','~':r'\textasciitilde{}','\n':r'\newline ','\t':r'\quad '}.get(c,c) for c in str(text) if ord(c)>=32 or c in '\n\t')
+    return ''.join((r'\textsuperscript{'+TEXT_SUPERSCRIPTS[c]+'}') if c in TEXT_SUPERSCRIPTS else (r'\textsubscript{'+str(ord(c)-0x2080)+'}') if c in '₀₁₂₃₄₅₆₇₈₉' else (r'\ShuyeTextSymbol{'+format(ord(c),'X')+'}{'+c+'}') if '\u0370'<=c<='\u03ff' or c=='µ' else {'∗':r'\ensuremath{\ast}','\\':r'\textbackslash{}','{':r'\{','}':r'\}','$':r'\$','&':r'\&','#':r'\#','%':r'\%','_':r'\_','^':r'\textasciicircum{}','~':r'\textasciitilde{}','\n':r'\newline ','\t':r'\quad '}.get(c,c) for c in str(text) if ord(c)>=32 or c in '\n\t')
 def safe_math(value):
     s=str(value)
     if len(s)>30000 or any(ord(c)<32 and c not in '\n\t\r' for c in s): raise ValueError('数学公式过长或含控制字符。')
@@ -96,6 +96,14 @@ def build_tex(doc,assets_dir,math_widths=None):
             tex=re.sub(r'\\('+'|'.join(alphabets)+r')\b',lambda m:'\\'+alphabets[m[1]],tex)
         return tex
     def image_asset(image):
+        if image.get('vectorSource'):
+            from emf import validate_vector_source,digest
+            source=image['vectorSource'];raw=base64.b64decode(source['pdf'],validate=True)
+            original=base64.b64decode(source['data'],validate=True)
+            preview=base64.b64decode(str(image.get('src','')).split(',',1)[-1],validate=True)
+            if source.get('format')!='emf' or digest(original)!=source.get('sha256') or digest(raw)!=source.get('pdfSha256') or digest(preview)!=source.get('previewSha256'):raise ValueError('矢量图或原始 EMF/预览摘要不一致。')
+            validate_vector_source(source,raw,original)
+            name='asset-'+str(len(list(assets_dir.glob('asset-*'))))+'.pdf';(assets_dir/name).write_bytes(raw);return name
         match=re.fullmatch(r'data:image/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)',str(image.get('src','')))
         if not match: raise ValueError('图片必须为内嵌 PNG/JPEG/WebP。')
         raw=base64.b64decode(match[2],validate=True)
@@ -278,6 +286,8 @@ def build_tex(doc,assets_dir,math_widths=None):
         pre+=r'\setlength{\heavyrulewidth}{.75pt}\setlength{\lightrulewidth}{.25pt}'+'\n'
         pre+=r'\setlength{\parskip}{0pt}\setlength{\skip\footins}{5pt}\renewcommand{\footnoterule}{\kern-3pt\hrule width81pt height.3pt\kern2.7pt}'+'\n'
         pre+=r'\makeatletter\renewcommand\footnotesize{\@setfontsize\footnotesize{6.9pt}{8pt}}\makeatother'+'\n'
+    if any(b.get('floatPlacement')=='top' for b in blocks):
+        pre+=r'\renewcommand{\dbltopfraction}{.9}\renewcommand{\textfraction}{.05}\makeatletter\setlength{\@fptop}{0pt}\setlength{\@dblfptop}{0pt}\makeatother'+'\n'
     pre+=r'\xeCJKDeclareCharClass{CJK}{"2160->"2188,"2103,"2109}'+'\n'
     pre+=r'\pagestyle{fancy}\fancyhf{}\setlength{\headwidth}{\textwidth}'+'\n'
     pre+=r'\fancyhead[LE]{'+escape(layout.get('headerEven',layout.get('header','')))+r'}\fancyhead[RO]{'+escape(layout.get('headerOdd',layout.get('header','')))+'}\n'
@@ -311,7 +321,21 @@ def build_tex(doc,assets_dir,math_widths=None):
         if cols>1 and on!=incols: content.append(r'\begin{multicols}{'+str(cols)+r'}[]['+str(round(minimum,2))+r'pt]\raggedcolumns' if on else r'\end{multicols}'); incols=on
     if not journal:columns(True)
     planned=[]
-    for b in blocks:
+    for source_index,b in enumerate(blocks):
+        inline=b.get('inlineMath',[])
+        if journal and b.get('type')=='paragraph' and not b.get('role') and len(inline)==1:
+            m=inline[0]
+            continuation_match=re.fullmatch(r'\s*([=<>≤≥])\s*\[\[math:'+re.escape(m['id'])+r'\]\]\s*([,，.。;；]?)\s*',b.get('text',''))
+            if continuation_match:
+                prefix={'≤':r'\le ','≥':r'\ge '}.get(continuation_match[1],continuation_match[1])
+                ident=b['id']+':'+m['id']
+                if math_widths:math_widths={**math_widths,b['id']:math_widths.get(ident,0)+values['fontSize']}
+                b={**b,'type':'equation','text':prefix+m['text'],'equationSuffix':continuation_match[2],'inlineMath':[],'_inlineDisplayId':ident}
+        # Word sometimes stores an isolated relation sign between two display
+        # objects as a text paragraph. Keep its object ID and visible token,
+        # but include it in the display run so column balancing cannot detach it.
+        if journal and 0<source_index<len(blocks)-1 and b.get('type')=='paragraph' and not b.get('role') and b.get('text','').strip() in ('=','<','>','≤','≥') and blocks[source_index-1].get('type')=='equation' and blocks[source_index+1].get('type')=='equation':
+            b={**b,'type':'equation','text':b['text'].strip()}
         if journal and math_widths:
             col_width=(values['width']-values['inner']-values['outer']-values['gap']*(cols-1))/cols*72.27/25.4
             full_width=(values['width']-values['inner']-values['outer'])*72.27/25.4
@@ -325,15 +349,37 @@ def build_tex(doc,assets_dir,math_widths=None):
                 if b.get('type')=='equation':b={**b,'text':break_formula(b['text'],width_ratio=(full_width-24)/widest)}
                 else:b={**b,'inlineMath':[{**m,'text':break_formula(m['text'],False,width_ratio=(full_width-24)/math_widths[b.get('id','')+':'+m['id']]) if math_widths.get(b.get('id','')+':'+m['id'],0)>full_width-24 else m['text']} for m in b.get('inlineMath',[])]}
         planned.append(b)
+    # Consecutive equation rows must keep one measure. Switching back to columns
+    # between an identity and its continuation separates the proof visually.
+    index=0
+    while index<len(planned):
+        if planned[index].get('type')!='equation':index+=1;continue
+        end=index+1
+        while end<len(planned) and planned[end].get('type')=='equation':end+=1
+        if any(row.get('placement')=='full-width' for row in planned[index:end]):
+            for i in range(index,end):planned[i]={**planned[i],'placement':'full-width'}
+        index=end
     # A heading must share the column measure of the text it introduces.
     # Otherwise multicols balances it into an isolated right-hand heading.
     for i in range(len(planned)-2,-1,-1):
         following=planned[i+1]
+        if journal and planned[i].get('type')=='paragraph' and not planned[i].get('role') and following.get('type')=='equation' and following.get('placement')=='full-width':
+            planned[i]={**planned[i],'fullWidth':True}
         if journal and planned[i].get('type')=='heading' and not planned[i].get('role') and (following.get('fullWidth') or following.get('placement')=='full-width'):
             planned[i]={**planned[i],'fullWidth':True}
     blocks=planned
+    # A deferred body figure must never interrupt the reference list. Include
+    # its explicit heading in the boundary, so the heading stays with item 1.
+    reference_start=None
+    if journal and any(b.get('floatPlacement')=='top' for b in blocks):
+        reference_start=next((i for i,b in enumerate(blocks) if b.get('role')=='reference'),None)
+        if reference_start and re.fullmatch(r'(?:参考文献|References)\s*[:：]?',blocks[reference_start-1].get('text','').strip(),re.I):reference_start-=1
     paragraph_open=False;side=None
     for block_num,b in enumerate(blocks):
+        if block_num==reference_start:
+            columns(False)
+            # No forced page break when the float queues are already empty.
+            content.append(r'\makeatletter\ifx\@deferlist\@empty\ifx\@dbldeferlist\@empty\else\clearpage\fi\else\clearpage\fi\makeatother')
         if b['type']=='sideStart':
             columns(False);side={'image':b['image'],'start':len(content)};continue
         if b['type']=='sideEnd':
@@ -352,7 +398,9 @@ def build_tex(doc,assets_dir,math_widths=None):
             side['split']=len(content)
             b={**b,'width':100,'wrap':'none'}
         role=b.get('role');front=bool(journal and role in FRONT_ROLES)
-        heading_space=values['fontSize']*values['lineHeight']*2
+        floating=b.get('floatPlacement')=='top'
+        if floating and (not journal or cols<2 or b.get('placement')!='full-width' or b.get('type') not in ('image','table') or side):raise ValueError('页顶浮动仅支持期刊双栏中的通栏图或短表。')
+        heading_space=values['fontSize']*values['lineHeight']*4
         if b.get('type')=='heading' and not front:
             column_pt=(values['width']-values['inner']-values['outer']-values['gap']*(cols-1))/cols*72.27/25.4
             heading_space=values['fontSize']*values['lineHeight']*3
@@ -362,7 +410,8 @@ def build_tex(doc,assets_dir,math_widths=None):
                 lines=max(1,math.ceil(sum(size if ord(c)>127 else size*.6 for c in heading.get('text',''))/column_pt))
                 heading_space+=lines*size*1.3+(6 if journal else size*3)
             heading_space=min(heading_space,(values['height']-values['top']-values['bottom'])*72.27/25.4*.9)
-        if not side:columns(not front and not b.get('fullWidth',False) and b.get('placement')!='full-width',heading_space)
+        if not side:columns(not front and not b.get('fullWidth',False) and (b.get('placement')!='full-width' or floating),heading_space)
+        if floating:content.append(r'\begin{figure*}[tp]')
         block_labels=marker(b.get('id'),'start')
         for term_num,term in enumerate(terms):
             if term in str(b.get('text','')) and b.get('type')!='index':
@@ -432,7 +481,12 @@ def build_tex(doc,assets_dir,math_widths=None):
                 # approximate needspace adds stretch at the heading and can
                 # make a half-empty page cheaper than a later paragraph break.
                 space_command=r'\needspace{' if incols else r'\Needspace{'
-                reserve='' if previous_heading else space_command+str(round(heading_space,2))+r'pt}'
+                # multicol collects a whole page before splitting columns. The
+                # stretch inserted by needspace gives it an artificially cheap
+                # break before a heading, leaving large holes on both columns.
+                # ctex's after-heading hook + club penalty keeps the first body
+                # lines; use the measured reserve only outside multicol.
+                reserve='' if previous_heading or incols else space_command+str(round(heading_space,2))+r'pt}'
                 content.append(reserve+r'\ctexset{'+command+'={format={'+fmt+'}'+spacing+'}}'+chr(92)+command+'['+short_title+']{'+block_labels+text+marker(b.get('id'),'end')+'}');continue
             style=''
             if journal and formulas:
@@ -458,7 +512,8 @@ def build_tex(doc,assets_dir,math_widths=None):
             # display's native keep-with-introduction penalty. Bridge only a
             # single-column, normal-body-size run, without crossing column or
             # font-style boundaries. Both semantic object IDs remain intact.
-            paragraph_open=bool(journal and cols==1 and follows_equation and size==values['fontSize'] and not b.get('bold') and b.get('fontFamily','serif')=='serif')
+            same_measure=cols==1 or not incols and blocks[block_num+1].get('placement')=='full-width' if follows_equation else False
+            paragraph_open=bool(journal and same_measure and follows_equation and size==values['fontSize'] and not b.get('bold') and b.get('fontFamily','serif')=='serif')
             ending='' if paragraph_open else r'\par}\ShuyeAfterParagraph'
             content.append('{'+style+enter+block_labels+text+marker(b.get('id'),'end')+ending)
             if journal and not incols and follows_equation and not paragraph_open:content.append(r'\nopagebreak[4]')
@@ -467,11 +522,11 @@ def build_tex(doc,assets_dir,math_widths=None):
             if not side and b.get('placement')=='full-width':columns(False)
             equation=render_math(b.get('text',''))
             number_text=b.get('equationNumber','');suffix=(r'\text{'+escape(b['equationSuffix'])+'}') if b.get('equationSuffix') else ''
-            from math_layout import continues_equation
-            continuation=bool(journal and block_num+1<len(blocks) and blocks[block_num+1].get('type')=='equation' and continues_equation(b.get('text','')+b.get('equationSuffix','')))
-            previous_display=bool(journal and cols==1 and block_num and blocks[block_num-1].get('type')=='equation')
-            next_display=bool(journal and cols==1 and block_num+1<len(blocks) and blocks[block_num+1].get('type')=='equation')
-            expression=block_labels+math_with_suffix(equation,suffix)+(r'\tag{'+escape(number_text)+'}' if number_text else '')+marker(b.get('id'),'end')
+            from math_layout import continues_equation,starts_relation
+            continuation=bool(journal and block_num+1<len(blocks) and blocks[block_num+1].get('type')=='equation' and (continues_equation(b.get('text','')+b.get('equationSuffix','')) or starts_relation(blocks[block_num+1].get('text',''))))
+            previous_display=bool(journal and block_num and blocks[block_num-1].get('type')=='equation')
+            next_display=bool(journal and block_num+1<len(blocks) and blocks[block_num+1].get('type')=='equation')
+            expression=block_labels+marker(b.get('_inlineDisplayId'),'start')+math_with_suffix(equation,suffix)+(r'\tag{'+escape(number_text)+'}' if number_text else '')+marker(b.get('_inlineDisplayId'),'end')+marker(b.get('id'),'end')
             if previous_display or next_display:
                 # One display run eliminates phantom text baselines between
                 # adjacent source equations. Rows retain their own destinations
@@ -484,7 +539,7 @@ def build_tex(doc,assets_dir,math_widths=None):
                 if paragraph_open:content.append(r'\par}\ShuyeAfterParagraph');paragraph_open=False
                 if continuation:content.append(r'\nopagebreak[4]')
         elif typ=='image':
-            if not side and b.get('placement')=='full-width':columns(False)
+            if not side and not floating and b.get('placement')=='full-width':columns(False)
             if b.get('wrap','none')!='none': raise ValueError('PDF 图文并排必须显式提供 sideTextIds 正文范围，不能静默丢弃环绕设置。')
             name=image_asset(b)
             width=number(b.get('width'),80,1,100)/100
@@ -509,7 +564,7 @@ def build_tex(doc,assets_dir,math_widths=None):
             placement=b.get('placement','auto')
             if placement not in ('auto','column','full-width'): raise ValueError('表格位置无效。')
             in_column=cols>1 and (placement=='column' or (placement=='auto' and len(rows)<=10 and max(map(len,rows),default=0)<=4))
-            if not in_column: columns(False)
+            if not in_column and not floating: columns(False)
             if not rows: warnings.append('空表格已忽略。'); columns(True); continue
             if len(rows)>5000 or max(map(len,rows))>50: raise ValueError('表格过大。')
             n=max(map(len,rows)); heads=min(len(rows),int(number(b.get('headerRows'),1,0,len(rows)))); grid=b.get('borderStyle','grid')=='grid'
@@ -590,6 +645,7 @@ def build_tex(doc,assets_dir,math_widths=None):
                     extra=max(extra,max(0,math.ceil(width/available)-1)*values['fontSize']*values['lineHeight'])
                 estimated_height+=extra
             keep_table=bool(cell_images) or in_column or bool(journal and len(rows)<=10 and estimated_height<(values['height']-values['top']-values['bottom'])*72.27/25.4*.45)
+            if floating and not keep_table:raise ValueError('长表不能页顶浮动；请使用随正文排放。')
             if caption_below and not cell_images:raise ValueError('下方题注目前只支持含单元格图片的整组输出。')
             env='tabular' if keep_table else 'longtable'
             if journal:content.append(r'{\fontsize{'+str(values['fontSize'])+'}{'+str(table_leading)+r'}\selectfont ')
@@ -629,6 +685,7 @@ def build_tex(doc,assets_dir,math_widths=None):
                 content.append(escape(term)+r'\quad '+(', '.join(r'\pageref{'+label+'}' for label in refs) if refs else '—')+r'\par')
             warnings.append('索引为近似定位：仅扫描块标题/正文并标记块起始页；跨页段落、跨页表格的中间页及单元格词语不保证收全，出版前需核对。')
         else: warnings.append('未支持块 '+str(typ)+' 已按文字保留。'); content.append(text+r'\par')
+        if floating:content.append(r'\end{figure*}')
     columns(False)
     for ident,n in notes.items():
         if ident not in note_seen or layout.get('notesMode')=='endnote':

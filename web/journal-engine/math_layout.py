@@ -3,7 +3,10 @@ import re
 
 def continues_equation(tex):
     tail=re.sub(r'\\(?:mathrm|text)\{\s*([=<>+\-])\s*\}',r'\1',tex).rstrip()
-    return bool(re.search(r'(?:[=<>+\-]|\\(?:leq|geq|approx|equiv))$',tail))
+    return bool(re.search(r'(?:[=<>+\-]|\\(?:leq?|geq?|approx|equiv))$',tail))
+
+def starts_relation(tex):
+    return bool(re.match(r'^\s*(?:[=<>+\-]|\\(?:leq?|geq?|approx|equiv)\b)',tex))
 
 def inline_breaks(tex):
     """Offer breaks between outer list items, without splitting math atoms.
@@ -66,7 +69,7 @@ def break_formula(tex,display=True,width_ratio=None):
             if cmd=='\\left':delimiters+=1
             if cmd=='\\right':delimiters=max(0,delimiters-1)
             if not depth and not delimiters and not ordinary and not bars and cmd=='\\text' and i>5:cuts.append(i-len(cmd))
-            if not depth and not delimiters and not ordinary and not bars and cmd in ('\\leq','\\geq','\\approx','\\equiv'):cuts.append(i-len(cmd))
+            if not depth and not delimiters and not ordinary and not bars and cmd in ('\\le','\\ge','\\leq','\\geq','\\approx','\\equiv'):cuts.append(i-len(cmd))
             continue
         c=value[i]
         if c=='{':depth+=1
