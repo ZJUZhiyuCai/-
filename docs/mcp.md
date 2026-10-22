@@ -1,5 +1,38 @@
 # 用 MCP 让 agent 编排图书
 
+## 在线期刊排版（0.6.0）
+
+在线服务端提供 85 个工具，包括 DOC/DOCX、OMML/MathType 导入、排版方案、
+章节、图表、脚注、真实 PDF 校样与逐页坐标检查。它与下面的旧版离线 42 工具
+服务是两种后端；旧 ChatGPT Sites 连接也不会自动变成 inkq.online 上的服务。
+
+在 [本站账号页](https://inkq.online/shuye/account) 创建可撤销 MCP 令牌，保存到
+仅自己可读的文件，按 [在线配置示例](../examples/mcp-online-config.example.json)
+连接 `mcp/remote.mjs`。该 stdio 适配器实时读取线上工具目录，支持普通 MCP 客户端；
+支持 HTTP MCP 的客户端也可直接使用 `https://inkq.online/shuye/mcp` 和 Bearer 令牌。
+令牌不应放进 Git、提示词或共享截图。连接无需 Computer Use，也无需打开编辑器。
+
+完整自动化流程：
+
+1. `get_capabilities`、`get_journal_capabilities` 检查当前服务的运行环境。
+2. `import_journal_docx` 导入原稿 base64。已有作者确认的最终修订可指定
+   `revisionPolicy: "accept"`；默认 `require-clean` 遇未确认修订会停止。
+   转换报告保留原文件 SHA-256、内容计数、公式源和转换摘要。
+3. `plan_journal_layout` 指定 `width: 210, height: 285, minDpi: 300`；读取返回的
+   `diagnostics`、`roles`、`operations`。无法识别的角色用 `roles: {blockId: role}`
+   补齐；不凭空生成作者、摘要、卷期或参考文献。
+4. 用方案中的 `expectedRevision` 调用 `apply_changes`，先 `dryRun: true` 再提交。
+   标题成为可导航的真实章节，图表尺寸依据源像素约束，不通过放大像素伪造清晰度。
+5. `start_journal_proof` 启动该修订的全文 PDF；轮询 `get_journal_proof`，检查
+   `compileMessages`、`quality`、内容覆盖率与图像 DPI。用 `get_journal_proof_page`
+   取得页码、对象 ID、文字和坐标，修改有问题的组件后重新输出。
+6. `download_journal_pdf` 下载并核对 SHA-256；过期校样默认拒绝。浏览器编辑器
+   会同步 agent 保存的修订，版本历史可恢复。
+
+这是排版和校样自动化，不是无人审校的发印批准。正文/公式语义、图中标注、
+稿件残留模板文字、卷期信息、印厂 PDF/X 要求仍须逐项确认；报告不会把未检查项
+自动标成通过。
+
 书页 0.3.0 提供 **42 个 MCP 工具、工程资源和工作流提示词**。agent 直接操作结构化模型，无需 Computer Use、截图或浏览器自动化；MCP 服务不需要先打开编辑器。模型调用由你的 agent 提供，书页不需要大模型 API Key。
 
 ## 安装和连接
@@ -113,3 +146,10 @@ node scripts/mcp-demo.mjs --workspace C:/books/shuye-workspace --pdf
 见 [逐项验收](mcp-acceptance.md)。MCP 提供当前排版模型的代码控制，不补齐原引擎所有缺口：独立 PDF 竖排、页码交叉引用、字符级批注、自由坐标绘图尚不支持；PDF 绕图仍降级，PDF/X/CMYK 未认证。validate_project 是结构与引用校验，返回 `visualPaginationChecked: false`；正式成书需检查实际输出。
 
 实现使用 [官方 TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk) 和 [MCP stdio](https://modelcontextprotocol.io/docs/develop/build-server)，依赖锁定于 package-lock.json。
+## 大稿件与精简返回
+
+在线工具支持可选参数 `responseMode: "summary"`。保存、导入和修改只返回修订号及文稿概况；用 `list_components` 分页检查正文结构，不让图片 base64 占满 agent 上下文。需要完整备份时使用 `responseMode: "full"`，读取 `structuredContent`；大结果不会再在 text 通道重复一份。网页 API 的返回格式不变。
+
+本地 stdio 适配器输入上限为 64 MiB（服务端请求仍限制 30 MiB、Word 文件 20 MiB）。自行使用 MCP SDK 编写客户端时，也应将 `StdioClientTransport` 的 `maxBufferSize` 设为 `64 * 1024 * 1024`，否则 SDK 默认的 10 MiB 会中断含大图的完整工程/PDF读取。一般 agent 使用 summary 和分页即可。
+
+`captionPosition` 只适用于 `table`；图片以 `captionIds` 指定图下题注。`set_text_block_type` 可在段落与标题之间转换并保留内容和 ID。

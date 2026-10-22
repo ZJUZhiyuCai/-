@@ -47,7 +47,7 @@ export async function createJournalRuntime({directory,python='python3',engineDir
  function ready(){if(!capabilities.enabled)throw Error('JOURNAL_RUNTIME_UNAVAILABLE: '+capabilities.reason);reserve();}
  return {
   capabilities,
-  async importDocx(base64){ready();return track(worker({method:'import',base64}));},
+  async importDocx(base64,revisionPolicy='require-clean'){ready();return track(worker({method:'import',base64,revisionPolicy}));},
   start(owner,record){
    // Reserve before any filesystem await: simultaneous requests cannot both start.
    ready();let resolveStart,rejectStart;

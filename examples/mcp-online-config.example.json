@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "shuye-online": {
+      "command": "node",
+      "args": ["C:/tools/open-typesetter/mcp/remote.mjs"],
+      "env": {
+        "SHUYE_MCP_URL": "https://inkq.online/shuye/mcp",
+        "SHUYE_MCP_TOKEN_FILE": "C:/private/shuye-mcp-token.txt"
+      }
+    }
+  }
+}

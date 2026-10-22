@@ -23,7 +23,7 @@ def main():
         print(json.dumps({'engine': result['report']['renderer'], 'python': sys.version.split()[0]}))
     elif request['method'] == 'import':
         data = base64.b64decode(request['base64'], validate=True)
-        result = import_docx(data)
+        result = import_docx(data,revision_policy=request.get('revisionPolicy','require-clean'))
         errors = [d for r in result['importReports'] for d in r['diagnostics'] if d['severity'] == 'error']
         if errors:
             raise ValueError('DOCX_IMPORT_UNSUPPORTED: ' + '; '.join(d['message'] for d in errors))

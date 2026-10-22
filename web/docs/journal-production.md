@@ -16,7 +16,7 @@ node standalone/build.mjs
 输出包已包含 `journal-engine/`，不含 Python、TeX 或商业字体。Linux 安装 Python 3.12 与 XeLaTeX；Ubuntu CI 使用以下 TeX 包：
 
 ```sh
-sudo apt-get install --no-install-recommends texlive-xetex texlive-lang-chinese texlive-latex-extra texlive-fonts-recommended texlive-plain-generic latex-cjk-common
+sudo apt-get install --no-install-recommends texlive-xetex texlive-lang-chinese texlive-latex-extra texlive-fonts-recommended texlive-plain-generic latex-cjk-common libreoffice-writer libreoffice-math inkscape fonts-noto-cjk fonts-freefont-ttf
 python3 -m venv /opt/shuye-python
 /opt/shuye-python/bin/pip install -r /opt/shuye/current/journal-engine/requirements.txt
 ```
@@ -46,7 +46,7 @@ python3 -m venv /opt/shuye-python
 ## 产品操作
 
 1. “导入期刊 Word”新建工程，核对公式、图片、表格与编号报告。原始 OMML 与摘要随每个公式保存，表格单元格保留公式和局部样式。未支持的公式节点、编号和对象以错误阻止导入。
-2. “期刊模板”设置字体、刊名、卷期、年份、中英文日期（`date` / `dateEn`）；在页面设置中按实际参考刊式选择单栏或双栏。在右侧为中英文题名、作者、单位、摘要、关键词及参考文献指定角色。角色由编辑指定，不从作者姓名等字符串猜测。缺失首面字段进入 PDF 诊断，缺失日期/文章编号不会由系统编造。
+2. “期刊模板”设置字体、刊名、卷期、年份、中英文日期（`date` / `dateEn`）；在页面设置中按实际参考刊式选择单栏或双栏。在右侧为中英文题名、作者、单位、摘要、关键词及参考文献指定角色。可使用“自动排版期刊”或 plan_journal_layout 按摘要、关键词与单位等结构生成角色计划；编辑可通过 roles 明确覆盖，需复核计划。缺失首面字段进入 PDF 诊断，缺失日期/文章编号不会由系统编造。
 3. 为图片/表格指定稳定的正文目标 ID、前后顺序、允许相隔页数及题注 ID；PDF 检查目标顺序、距离、题注同页和源对象覆盖。锚点不能代替编辑确认“首次引用”是否选对。宽公式按实际字体测量后换栏或断行，不缩小整张页面或栅格化公式。
 4. 保存后生成“全文期刊 PDF”，同时下载校样报告。浏览器纸面只作结构编辑预览；全文校样使用 XeLaTeX 独立断行分页。带公式的文字使用源编辑器/公式编辑器，禁止在纸面直接破坏公式占位标记。
 5. 刷新后可“取回期刊校样”。源修订变化、下载期间修改或切换工程会阻止将旧校样当作最新稿。服务端校验 PDF 与报告摘要。

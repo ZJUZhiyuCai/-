@@ -7,7 +7,7 @@ test('a superseded journal import open cannot change the active project URL',asy
  const urls=[],messages=[];
  const originalDocument=Object.getOwnPropertyDescriptor(globalThis,'document'),originalHistory=Object.getOwnPropertyDescriptor(globalThis,'history');
  t.after(()=>{for(const [key,descriptor] of [['document',originalDocument],['history',originalHistory]]){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete globalThis[key];}});
- globalThis.document={createElement:()=>picker,body:{append(){}}};
+ globalThis.document={createElement:type=>type==='input'?picker:{},body:{append(){}}};
  globalThis.history={replaceState:(_state,_unused,url)=>urls.push(url)};
  const doc={title:'Current manuscript',blocks:[]};
  const connection={projectId:'current',open:async()=>false};

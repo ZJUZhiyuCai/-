@@ -1,5 +1,7 @@
 # 第三方组件
 
+MathType MTEF 解析使用 mathtype2omml 的 mathtypejx/mtef 子模块，来源 https://github.com/uwjiaoxing/mathtype2omml ，提交 fe5293326ec047bd943de88293add86b8a9050d3（MIT）。许可、字体映射的 BSD 通知和修改说明保留在 journal-engine/vendor/。本项目修正矩阵行列转换，并独立实现 MathML → OMML 转换；不分发 Microsoft 的 MML2OMML.XSL。旧 DOC 和矢量图片转换分别调用服务器自行安装的 LibreOffice 和 Inkscape，不捆绑其二进制。
+
 公式预览使用 KaTeX 0.19.0，按 MIT 许可分发。原始许可保存在 `public/editor/vendor/katex/LICENSE`，项目地址 https://github.com/KaTeX/KaTeX 。代码、CSS 与字体来自官方 npm 包，浏览器运行时不访问 CDN。
 
 网站自由版面 PDF 使用 pdf-lib 1.17.1 和 @pdf-lib/fontkit 1.1.1（MIT）。通过 npm 安装，许可证保留在安装包中，不捆绑用户字体。字体嵌入权限由字体所有者及字体的 OS/2 标志决定。独立验收用 Fandol 字体来自本机 TeX Live，仅用于本地测试，不随网站分发。

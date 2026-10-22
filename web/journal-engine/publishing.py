@@ -20,7 +20,15 @@ def escape(text):
     # Unicode subscript numerals are often absent from text/math font cmaps.
     # Typeset the same numeral using TeX's subscript positioning; retain the
     # original Unicode string in the document model and import evidence.
-    return ''.join((r'\textsubscript{'+str(ord(c)-0x2080)+'}') if c in '₀₁₂₃₄₅₆₇₈₉' else {'\\':r'\textbackslash{}','{':r'\{','}':r'\}','$':r'\$','&':r'\&','#':r'\#','%':r'\%','_':r'\_','^':r'\textasciicircum{}','~':r'\textasciitilde{}','\n':r'\newline ','\t':r'\quad '}.get(c,c) for c in str(text) if ord(c)>=32 or c in '\n\t')
+    urls=list(re.finditer(r'https?://[^\s]+',str(text)))
+    if urls:
+        chunks=[];start=0
+        for match in urls:
+            chunks.append(escape(str(text)[start:match.start()]))
+            chunks.append(r'\allowbreak{}'.join(escape(c) for c in match[0]));start=match.end()
+        chunks.append(escape(str(text)[start:]));return ''.join(chunks)
+    symbols={'≥':r'\ensuremath{\geq}','≤':r'\ensuremath{\leq}','≡':r'\ensuremath{\equiv}','∗':r'\ensuremath{\ast}', '\u202f':r'\nobreak\hspace{.16667em}', '\u2009':r'\hspace{.16667em}', '\u200b':r'\allowbreak{}','⁻':r'\textsuperscript{-}','⁺':r'\textsuperscript{+}'}
+    return ''.join(symbols[c] if c in symbols else (r'\ShuyeGreek{'+c+'}') if 0x370<=ord(c)<=0x3ff else (r'\textsubscript{'+str(ord(c)-0x2080)+'}') if c in '₀₁₂₃₄₅₆₇₈₉' else {'\\':r'\textbackslash{}','{':r'\{','}':r'\}','$':r'\$','&':r'\&','#':r'\#','%':r'\%','_':r'\_','^':r'\textasciicircum{}','~':r'\textasciitilde{}','\n':r'\newline ','\t':r'\quad '}.get(c,c) for c in str(text) if ord(c)>=32 or c in '\n\t')
 def safe_math(value):
     s=str(value)
     if len(s)>30000 or any(ord(c)<32 and c not in '\n\t\r' for c in s): raise ValueError('数学公式过长或含控制字符。')
@@ -100,7 +108,16 @@ def build_tex(doc,assets_dir,math_widths=None):
         raw=base64.b64decode(match[2],validate=True)
         if len(raw)>5*1024*1024: raise ValueError('图片超过 5 MB。')
         ext=match[1]; name='asset-'+str(len(list(assets_dir.glob('asset-*'))))+'.'+ext
-        if ext=='webp':
+        embedded=None
+        if ext=='png' and len(raw)>29:
+            import struct
+            width,height=struct.unpack('>II',raw[16:24])
+            if width*height>25000000:
+                from png_pdf import png_pdf
+                embedded=png_pdf(raw)
+        if embedded is not None:
+            name=name.rsplit('.',1)[0]+'.pdf';(assets_dir/name).write_bytes(embedded)
+        elif ext=='webp':
             try:
                 from PIL import Image
                 from io import BytesIO
@@ -160,7 +177,7 @@ def build_tex(doc,assets_dir,math_widths=None):
                             lines.append(r'\noindent\hangindent=5.5em\hangafter=1 '+line_tex+r'\par')
                         body=''.join(lines)
                     body=marker('note:'+ident,'start')+body+marker('note:'+ident,'end')
-                    out.append(r'\begingroup'+custom+r'\renewcommand{\thefootnote}{'+note_markers[ident]+r'}\footnote['+str(note_numbers[ident])+']{'+body+r'}\endgroup');note_seen.add(ident)
+                    out.append(r'\begingroup'+custom+r'\renewcommand{\thefootnote}{'+note_markers[ident]+r'}\footnote['+str(note_numbers[ident])+']{'+body+r'}\endgroup{}');note_seen.add(ident)
 
             else: out.append(escape(m.group(0))); warnings.append('缺少脚注内容：'+ident)
             start=m.end()
@@ -260,6 +277,10 @@ def build_tex(doc,assets_dir,math_widths=None):
     if font_set=='source-han':pre+=r'\setCJKmainfont[BoldFont={Source Han Serif SC Bold}]{Source Han Serif SC}\setCJKsansfont[BoldFont={Source Han Sans SC Bold}]{Source Han Sans SC}'+'\n'
     if journal and journal.get('bodyWeight')=='light':pre=pre.replace(']{Source Han Serif SC}',']{Source Han Serif SC Light}')
     if journal and journal.get('latinFont')=='times':pre+=r'\setmainfont{Times New Roman}'+'\n'
+    # Fandol lacks some traditional Chinese characters. Prefer installed open
+    # fonts as fallbacks; never replace the source character with a lookalike.
+    pre+=r'\IfFontExistsTF{Noto Serif CJK SC}{\xeCJKsetup{AutoFallBack=true}\setCJKfallbackfamilyfont{\CJKrmdefault}{Noto Serif CJK SC}\setCJKfallbackfamilyfont{\CJKsfdefault}{Noto Sans CJK SC}}{}'+'\n'
+    pre+=r'\IfFontExistsTF{FreeSerif}{\newfontfamily\ShuyeGreekFont{FreeSerif}\newcommand{\ShuyeGreek}[1]{{\ShuyeGreekFont #1}}}{\newcommand{\ShuyeGreek}[1]{#1}}'+'\n'
     if journal:
         math_font=journal.get('mathFont','tex-default')
         if math_font not in ('tex-default','stix-two'):raise ValueError('数学字体方案无效。')
@@ -284,9 +305,15 @@ def build_tex(doc,assets_dir,math_widths=None):
         page_label=r'\thepage' if journal.get('pageNumberStyle','plain')=='plain' else r'·\enspace\thepage\enspace·'
         year+=escape(journal.get('yearSuffix',''))
         pre+=r'\fancyhf{}\fancyhead[LE]{'+small+page_label+r'}\fancyhead[CE]{'+small+name+r'}\fancyhead[RE]{'+small+year+r'}\fancyhead[LO]{'+small+('第'+issue+'期' if issue else '')+r'}\fancyhead[CO]{'+small+escape(journal.get('shortTitle',''))+r'}\fancyhead[RO]{'+small+page_label+r'}'+'\n'
+        overrides=''
+        if ('header' in layout and layout['header']!='书页 · 开源排版') or 'headerEven' in layout:
+            overrides+=r'\fancyhead{}\fancyhead[LE]{'+escape(layout.get('headerEven',layout.get('header','')))+r'}\fancyhead[RO]{'+escape(layout.get('header',''))+'}'
+        if 'footer' in layout or 'footerEven' in layout:
+            overrides+=r'\fancyfoot{}\fancyfoot[LE]{'+footer(layout.get('footerEven',layout.get('footer','')))+r'}\fancyfoot[RO]{'+footer(layout.get('footer',''))+'}'
+        pre+=overrides+'\n'
         left=r'\strut '+('第'+volume+'卷' if volume else '')+('第'+issue+'期' if issue else '')+r'\\ '+escape(journal.get('date',''))
         right=r'\strut '+('Vol. '+volume if volume else '')+(' No. '+issue if issue else '')+r'\\ '+escape(journal.get('dateEn') or journal.get('year',''))
-        pre+=r'\fancypagestyle{journalfirst}{\fancyhf{}\fancyhead[C]{'+small+r'\parbox[t]{.24\textwidth}{\raggedright '+left+r'}\parbox[t]{.52\textwidth}{\centering '+r'\strut '+name+r'\\ '+name_en+r'}\parbox[t]{.24\textwidth}{\raggedleft '+right+r'}}}'+"\n"
+        pre+=r'\fancypagestyle{journalfirst}{\fancyhf{}\fancyhead[C]{'+small+r'\parbox[t]{.24\textwidth}{\raggedright '+left+r'}\parbox[t]{.52\textwidth}{\centering '+r'\strut '+name+r'\\ '+name_en+r'}\parbox[t]{.24\textwidth}{\raggedleft '+right+r'}}'+overrides+'}'+"\n"
     pre+=r'\setlength{\columnsep}{'+str(values['gap'])+'mm}\n'+r'\setlength{\parindent}{'+str(values['indent'])+'em}\n'
     pre+=r'\begin{document}\setcounter{page}{'+str(int(values['pageStart']))+'}\n'+r'\fontsize{'+str(values['fontSize'])+'}{'+str(values['fontSize']*values['lineHeight'])+r'}\selectfont'+'\n'
     if journal:pre+=r'\allowdisplaybreaks[1]\thispagestyle{journalfirst}\setlength{\emergencystretch}{3em}\setlength{\abovedisplayskip}{4pt plus 1pt minus 1pt}\setlength{\belowdisplayskip}{4pt plus 1pt minus 1pt}\setlength{\abovedisplayshortskip}{3pt}\setlength{\belowdisplayshortskip}{3pt}\setlength{\multicolsep}{5pt}'+'\n'
@@ -500,7 +527,7 @@ def build_tex(doc,assets_dir,math_widths=None):
             raw_widths=b.get('columnWidths') or [1]*n
             if len(raw_widths)!=n: raise ValueError('表格列宽数量与列数不一致。')
             widths=[number(v,1,.001,10000) for v in raw_widths]; total=sum(widths);widths=[v/total for v in widths]
-            def cell_width(col,span=1): return r'\dimexpr '+str(round(sum(widths[col:col+span]),7))+r'\ShuyeTableWidth-2\tabcolsep-2\arrayrulewidth\relax'
+            def cell_width(col,span=1): return r'\dimexpr '+str(round(sum(widths[col:col+span]),7))+r'\ShuyeTableWidth-2\tabcolsep'+(r'-2\arrayrulewidth' if grid else '')+r'\relax'
             table_fraction=number((journal or {}).get('tableWidthPercent'),100,70,100)/100
             cell_align='>{'+{'center':r'\centering', 'right':r'\raggedleft'}.get(b.get('align'),r'\raggedright')+r'\arraybackslash}'
             spec=('|' if grid else '')+''.join(cell_align+'p{'+cell_width(j)+'}'+('|' if grid else '') for j in range(n))
@@ -518,7 +545,8 @@ def build_tex(doc,assets_dir,math_widths=None):
             if heads!=original_heads: warnings.append('合并单元格跨越表头边界，重复表头已扩展至第 '+str(heads)+' 行。')
             # A TeX strut height excludes its depth. Using a whole line as the
             # height adds the depth again, inflating every short table row.
-            table_leading=values['fontSize']*(1.25 if journal else values['lineHeight'])
+            table_font_size=number(b.get('fontSize'),values['fontSize'],5,72)
+            table_leading=table_font_size*(1.25 if journal else values['lineHeight'])
             row_heights=[table_leading*.7 if journal else values['fontSize']*1.5 for row in rows]
             for (r,c),(rs,cs) in anchors.items():
                 if rs==1:continue # Horizontal cells get their natural p-column height.
@@ -576,7 +604,14 @@ def build_tex(doc,assets_dir,math_widths=None):
             keep_table=bool(cell_images) or in_column or bool(journal and len(rows)<=10 and estimated_height<(values['height']-values['top']-values['bottom'])*72.27/25.4*.45)
             if caption_below and not cell_images:raise ValueError('下方题注目前只支持含单元格图片的整组输出。')
             env='tabular' if keep_table else 'longtable'
-            if journal:content.append(r'{\fontsize{'+str(values['fontSize'])+'}{'+str(table_leading)+r'}\selectfont ')
+            if journal:
+                content.append(r'{\fontsize{'+str(table_font_size)+'}{'+str(table_leading)+r'}\selectfont ')
+                # Word grids may contain very narrow empty alignment columns.
+                # Fixed 6pt padding made their p-widths negative and enlarged
+                # the entire table. Keep the original columns and all content.
+                table_width_pt=(values['width']-values['inner']-values['outer']-((cols-1)*values['gap'] if in_column else 0))/(cols if in_column else 1)*72.27/25.4*table_fraction
+                padding=min(6,max(0,(min(widths)*table_width_pt-(.8 if grid else 0))/4))
+                content.append(r'\setlength{\tabcolsep}{'+str(round(padding,5))+'pt}')
             if cell_images:content.append(r'\setbox\ShuyeCellBox=\vbox{')
             if keep_table: content.append(r'\par'+(r'\addvspace{4pt}' if journal else '')+r'\noindent\begin{minipage}{\linewidth}'+(r'\centering ' if journal else ''))
             content.append(r'\setlength{\ShuyeTableWidth}{'+('' if table_fraction==1 else str(table_fraction))+r'\linewidth}'+r'\begin{'+env+'}{'+spec+'}')
@@ -623,6 +658,8 @@ def build_tex(doc,assets_dir,math_widths=None):
 def render_pdf(doc, evidence_dir=None):
     exe=shutil.which('xelatex') or (str(TEX_DEFAULT) if TEX_DEFAULT.exists() else None)
     if not exe: raise RuntimeError('未找到 XeLaTeX。请安装 TeX Live/TinyTeX 并加入 PATH。')
+    driver=shutil.which('xdvipdfmx') or str(Path(exe).with_name('xdvipdfmx.exe' if os.name=='nt' else 'xdvipdfmx'))
+    if not Path(driver).is_file():raise RuntimeError('未找到 xdvipdfmx，请安装完整 XeTeX 运行时。')
     if not _LOCK.acquire(blocking=False): raise RuntimeError('已有 PDF 正在排版，请稍后重试。')
     try:
         if evidence_dir is not None:Path(evidence_dir).mkdir(parents=True,exist_ok=False)
@@ -630,12 +667,18 @@ def render_pdf(doc, evidence_dir=None):
             folder=Path(tmp); source,warnings=build_tex(doc,folder); (folder/'book.tex').write_text(source,encoding='utf-8')
             env=os.environ.copy(); env.update({'openin_any':'p','openout_any':'p','shell_escape':'f','TEXMFOUTPUT':tmp,'max_print_line':'1000'})
             for run in range(3 if doc.get('journal') else 2):
-                try: result=subprocess.run([exe,'-no-shell-escape','-interaction=nonstopmode','-halt-on-error','-file-line-error','book.tex'],cwd=tmp,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=90,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+                try: result=subprocess.run([exe,'-no-pdf','-no-shell-escape','-interaction=nonstopmode','-halt-on-error','-file-line-error','book.tex'],cwd=tmp,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=90,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
                 except subprocess.TimeoutExpired: raise RuntimeError('PDF 编译超时，请缩短文稿或检查公式。')
                 if run==0 and doc.get('journal') and result.returncode==0:
                     widths={m[1]:float(m[2]) for m in re.finditer(r'SHUYEWIDTH:([A-Za-z0-9_:-]+):([0-9.]+)pt',result.stdout.decode('utf-8',errors='replace'))}
                     source,warnings=build_tex(doc,folder,widths);(folder/'book.tex').write_text(source,encoding='utf-8')
                 if result.returncode: raise RuntimeError('PDF 编译失败：'+result.stdout.decode('utf-8',errors='replace')[-2500:])
+            # Finish typesetting before decoding large original images, so
+            # XeLaTeX and xdvipdfmx do not retain both heaps simultaneously.
+            # This preserves every source pixel and only converts the final XDV.
+            try: converted=subprocess.run([driver,'-q','-o','book.pdf','book.xdv'],cwd=tmp,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=90,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+            except subprocess.TimeoutExpired:raise RuntimeError('PDF 图像转换超时。')
+            if converted.returncode:raise RuntimeError('PDF 转换失败：'+converted.stdout.decode('utf-8',errors='replace')[-2500:])
             log=(folder/'book.log').read_text(encoding='utf-8',errors='replace')
             messages,trials=compile_diagnostics(log)
             if any('Overfull' in line for line in messages): warnings.append('存在超出版心的行或表格，请检查 PDF。')

@@ -96,7 +96,9 @@ class Numbering:
 def check_fields(root,warnings,stats=None):
     # EndNote's DATA field stores document metadata, not a visible citation.
     # Do not exempt EN.CITE, EN.REFLIST, or other empty/unknown fields.
-    def metadata(instruction):return instruction.strip()=='ADDIN EN.CITE.DATA'
+    def metadata(instruction):
+        value=instruction.strip()
+        return value in ('ADDIN EN.CITE.DATA','MACROBUTTON MTEditEquationSection2',r'MACROBUTTON MTPlaceRef \* MERGEFORMAT') or bool(re.fullmatch(r'SEQ MT(?:Eqn|Sec|Chap)\s+\\r(?:\s+\d+)?\s+\\h\s+\\\* MERGEFORMAT',value))
     stack=[];count=0;metadata_count=0
     for e in root.iter():
         if e.tag==W+'fldSimple':
@@ -118,6 +120,9 @@ def check_fields(root,warnings,stats=None):
         elif e.tag==W+'t':
             for f in stack:
                 if f['separated']:f['text']+=e.text or ''
+        elif e.tag=='{http://schemas.openxmlformats.org/officeDocument/2006/math}oMath':
+            for f in stack:
+                if f['separated']:f['text']+='[formula]'
     if stack:warnings.append('Word 域边界未闭合，须核对原稿。')
     if stats is not None:stats.update({'sourceFields':count,'metadataFields':metadata_count,'visibleFields':count-metadata_count})
     return count-metadata_count

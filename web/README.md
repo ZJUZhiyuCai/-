@@ -12,11 +12,11 @@
 
 支持文字样式、章节、1–4 栏、横竖排、奇偶页眉页脚、图片绕排、表格合并、数学公式、注音、脚注尾注、文献引用、批注、目录索引。“打开文稿”中的浏览器 Word 导入仍是有损子集。含公式的期刊请使用新增的“导入期刊 Word”，它需要独立服务器启用 Python/XeLaTeX，保存原始 OMML、导入诊断及对象身份；发现不支持的内容会拒绝新建工程。
 
-期刊工作流：导入 Word → “期刊模板”设置刊名、卷期、日期与字体 → 右侧指定中英文首面角色、图表锚点和题注 → 保存 → “全文期刊 PDF”。浏览器纸面是结构编辑预览；首面、分页、公式换行和锚点验收以服务端全文 PDF 为准。PDF 与报告绑定源修订，刷新后可“取回期刊校样”；文稿变化后拒绝交付旧校样。下载成功不代表可发印。配置、接口及限制见 [全文期刊生产链](docs/journal-production.md)。本分支新增能力尚未代表在线站点已部署。
+期刊工作流：导入 Word → “期刊模板”设置刊名、卷期、日期与字体 → 右侧指定中英文首面角色、图表锚点和题注 → 保存 → “全文期刊 PDF”。浏览器纸面是结构编辑预览；首面、分页、公式换行和锚点验收以服务端全文 PDF 为准。PDF 与报告绑定源修订，刷新后可“取回期刊校样”；文稿变化后拒绝交付旧校样。下载成功不代表可发印。配置、接口及限制见 [全文期刊生产链](docs/journal-production.md)。0.6.0 增加旧 DOC、MathType、矢量与组合图片兼容、明确的接受修订策略，以及期刊自动排版计划；发布与实稿测试见 [0.6.0 验收](../docs/release-0.6.0.md)。
 
 ## Agent / MCP
 
-当前工作区 `POST /mcp` 提供 83 个工具，与编辑器共享用户隔离的云端工程。Sites 使用发布生成的个人插件，自托管使用 Bearer MCP。`list_projects` → `get_project` → `apply_changes`，修改必须携带 `expectedRevision`，可先使用 `dryRun:true`。所有操作按稳定组件 ID 定位，无 computer-use 依赖。新增期刊工具先调用 `get_journal_capabilities`，只有 `enabled:true` 才能进行原生导入和全文 PDF 编译；Workers 部署不支持本机 TeX。
+当前工作区 `POST /mcp` 提供 85 个工具，与编辑器共享用户隔离的云端工程。Sites 使用发布生成的个人插件，自托管使用 Bearer MCP。`list_projects` → `get_project` → `apply_changes`，修改必须携带 `expectedRevision`，可先使用 `dryRun:true`。所有操作按稳定组件 ID 定位，无 computer-use 依赖。新增期刊工具先调用 `get_journal_capabilities`，只有 `enabled:true` 才能进行原生导入和全文 PDF 编译；Workers 部署不支持本机 TeX。
 
 模型 v4 在保留 v3 `composition` 的同时，新增首面角色、带来源摘要的行内/表内公式、脚注标记、图表锚点及不可抹去的导入报告。`get_journal_proof_page` 返回实际 PDF 的对象与文字坐标，AI 可据此定位和修改源组件，再按新修订输出校样。它不等同于视觉或数学语义验收。
 

@@ -18,8 +18,16 @@ def xml(data):
     return ET.fromstring(data)
 def utf16(s): return len(s.encode('utf-16-le'))//2
 
-def import_docx(data):
+def import_docx(data,revision_policy='require-clean'):
     if len(data)>20*1024*1024: raise ValueError('DOCX 不得超过 20 MB。')
+    if data.startswith(bytes.fromhex('d0cf11e0a1b11ae1')):
+        from word_compat import legacy_docx
+        result=import_docx(legacy_docx(data),revision_policy)
+        report=result['importReports'][0]
+        converted_hash=report['sourceSha256'];report['sourceSha256']=hashlib.sha256(data).hexdigest();report['sourceBytes']=len(data)
+        report['counts']['convertedLegacyDoc']=1
+        report['diagnostics'].append({'code':'LEGACY_DOC_CONVERTED','severity':'warning','message':'DOC 经隔离 LibreOffice 转为 DOCX；转换中间件 SHA-256：'+converted_hash+'。原稿摘要保持不变。'})
+        return result
     warnings = ['Word 导入保留可支持的内容结构；原分页、字体替代、浮动定位和复杂表格需核对。']
     with ZipFile(BytesIO(data)) as z:
         if len(z.infolist())>5000 or sum(i.file_size for i in z.infolist())>80*1024*1024: raise ValueError('Word 解压体积或文件数量过大。')
@@ -29,6 +37,26 @@ def import_docx(data):
         if 'word/_rels/document.xml.rels' in z.namelist():
             for r in xml(z.read('word/_rels/document.xml.rels')):
                 if r.get('TargetMode')!='External': rels[r.get('Id')]=posixpath.normpath('word/'+r.get('Target',''))
+        from word_compat import accept_revisions,choose_alternates,convert_objects,compose_groups,vector_png,normalize_fence_extensions,transform_pictures
+        revisions=accept_revisions(root,revision_policy)
+        if revisions and revision_policy!='accept':warnings.append('WORD_REVISIONS_REQUIRE_POLICY: 需显式选择 revisionPolicy=accept 或提交已确认的稿件。')
+        alternates=choose_alternates(root)
+        object_audit=convert_objects(root,z.read,rels) if any(e.tag==W+'object' for e in root.iter()) else []
+        fence_extensions=normalize_fence_extensions(root)
+        assets,groups,group_pictures=compose_groups(root,z.read,rels)
+        transformed,picture_audit=transform_pictures(root,z.read,rels);assets.update(transformed)
+        def read_asset(path):return assets[path] if path in assets else z.read(path)
+        custom_markers={}
+        # customMarkFollows stores the literal marker after the reference. Consume
+        # it exactly once, preserving subsequent text and stable note IDs.
+        for run in root.iter(W+'r'):
+            children=list(run)
+            for index,ref in enumerate(children):
+                if ref.tag not in (W+'footnoteReference',W+'endnoteReference') or ref.get(W+'customMarkFollows') not in ('1','true','on'):continue
+                following=children[index+1] if index+1<len(children) else None
+                if following is None or following.tag!=W+'t' or not following.text:raise ValueError('自定义注释标记缺少紧随文字')
+                key=('end-' if ref.tag==W+'endnoteReference' else '')+ref.get(W+'id','')
+                custom_markers[key]=following.text[0];following.text=following.text[1:]
         styles=xml(z.read('word/styles.xml')) if 'word/styles.xml' in z.namelist() else None
         numbering=Numbering(xml(z.read('word/numbering.xml')) if 'word/numbering.xml' in z.namelist() else None,styles,warnings)
         character_styles={s.get(W+'styleId'):s for s in (styles if styles is not None else []) if s.get(W+'type')=='character'}
@@ -48,7 +76,7 @@ def import_docx(data):
         settings=xml(z.read('word/settings.xml')) if 'word/settings.xml' in z.namelist() else None
         notes=[]
         for e in root.iter():
-            if local(e) in ('ins','del','moveFrom','moveTo'):
+            if e.tag in (W+'ins',W+'del',W+'moveFrom',W+'moveTo'):
                 warnings.append('修订或域 '+local(e)+' 尚未执行接受/拒绝/更新策略，请先在原稿中确认。')
         field_stats={};field_count=check_fields(root,warnings,field_stats)
         if field_count:
@@ -63,8 +91,8 @@ def import_docx(data):
                 fmt=val(props,'numFmt','decimal');start=int(val(props,'numStart','1'))
                 if val(props,'numRestart','continuous')!='continuous':warnings.append('注释按页/节重启编号尚未还原，须核对原稿。')
                 refs=list(dict.fromkeys(e.get(W+'id') for e in root.iter(W+kind+'Reference')))
-                if any(e.get(W+'customMarkFollows') in ('1','true','on') for e in root.iter(W+kind+'Reference')):warnings.append('自定义注释标记尚未还原，须核对原稿。')
-                for n in xml(z.read(part)):
+                note_root=xml(z.read(part));revisions+=accept_revisions(note_root,revision_policy)
+                for n in note_root:
                     ident=n.get(W+'id','')
                     if n.get(W+'type') in ('separator','continuationSeparator') or ident.startswith('-'): continue
                     if any(local(c) in ('oMath','drawing','pict','object','tbl') for c in n.iter()): warnings.append('注释 '+ident+' 含公式、图表或对象，当前只提取文字，须核对原稿。')
@@ -73,6 +101,7 @@ def import_docx(data):
                         try:note['marker']=format_number(start+refs.index(ident),fmt)
                         except ValueError as error:warnings.append('注释 '+ident+' '+str(error)+'，须核对原稿。')
                     notes.append(note)
+                    if note['id'] in custom_markers:note['marker']=custom_markers[note['id']]
         from omml import to_tex
         def math(e): return to_tex(e,warnings)
         def math_source(e):
@@ -108,19 +137,26 @@ def import_docx(data):
                     if len(mark)>2 and mark['end']>start: marks.append(mark)
                     return
                 if e.tag==W+'t': text+=e.text or ''; return
-                if e.tag==W+'sym': warnings.append('Word 字体编码符号尚未转换，须按原稿恢复符号。');return
+                if e.tag==W+'sym':
+                    # Adobe Symbol's multiplication slot (including the Word
+                    # private-use encoding). Unknown mappings remain blocking.
+                    if e.get(W+'font','').lower()=='symbol' and e.get(W+'char','').upper() in ('F0D7','00D7','D7'):text+='×'
+                    else:warnings.append('Word 字体编码符号尚未转换：'+str(e.get(W+'font'))+'/'+str(e.get(W+'char')))
+                    return
                 if e.tag in (W+'tab',W+'br',W+'cr'): text+='\t' if k=='tab' else '\n'; return
                 if e.tag in (W+'footnoteReference',W+'endnoteReference'):
                     text+='[^'+('end-' if k=='endnoteReference' else '')+e.get(W+'id','')+']'; return
                 if k=='blip':
                     rid=e.get('{'+NS['r']+'}embed'); path=rels.get(rid,''); ext=path.rsplit('.',1)[-1].lower()
-                    if path in z.namelist() and ext in ('png','jpg','jpeg','webp','tif','tiff'):
-                        image=z.read(path)
+                    if (path in assets or path in z.namelist()) and ext in ('png','jpg','jpeg','webp','tif','tiff','emf','wmf'):
+                        image=read_asset(path)
+                        if ext in ('emf','wmf'):
+                            image=vector_png(image,ext);ext='png'
                         if ext in ('tif','tiff'):
                             try:
                                 from PIL import Image
                                 with Image.open(BytesIO(image)) as im:
-                                    if im.width*im.height>25000000 or getattr(im,'n_frames',1)!=1: raise ValueError('多帧或超过 25 MP 的 TIFF')
+                                    if im.width*im.height>125000000 or getattr(im,'n_frames',1)!=1: raise ValueError('多帧或超过 125 MP 的 TIFF')
                                     if im.mode not in ('1','L','LA','RGB','RGBA','P'): raise ValueError('TIFF 色彩/位深 '+im.mode+' 不能无损转换到 PNG')
                                     im.load();out=BytesIO();im.save(out,format='PNG');image=out.getvalue();ext='png'
                             except (ImportError,OSError,ValueError) as error:
@@ -254,4 +290,12 @@ def import_docx(data):
             diagnostics.append({'code':'DOCX_REVIEW' if severity=='warning' else 'DOCX_CONTENT_REVIEW','severity':severity,'message':message})
         report={'kind':'docx','sourceSha256':hashlib.sha256(data).hexdigest(),'sourceBytes':len(data),'counts':{'sourceMath':source_math,'sourceDisplayMath':sum(1 for e in root.iter(M+'oMathPara')),'sourceTables':sum(1 for e in root.iter(W+'tbl')),'importedTables':sum(b['type']=='table' for b in blocks),'importedMath':output_math,'sourceImages':source_images,'importedImages':output_images,'sourceNumberedParagraphs':numbering.source_count,'importedNumberedParagraphs':numbering.imported_count},'diagnostics':diagnostics}
         report['counts'].update(field_stats)
+        report['counts'].update({'acceptedRevisions':revisions,'alternateBranchesSelected':alternates,'convertedOleMath':len(object_audit),'composedGroups':groups,'groupPictureAssets':group_pictures})
+        report['counts']['normalizedFenceExtensions']=fence_extensions
+        report['counts']['transformedPictures']=len(picture_audit)
+        for entry in picture_audit:report['diagnostics'].append({'code':'WORD_PICTURE_TRANSFORM','severity':'info','message':__import__('json').dumps(entry,separators=(',',':'))})
+        if fence_extensions:report['diagnostics'].append({'code':'WORD_FENCE_EXTENSIONS','severity':'warning','message':'将 '+str(fence_extensions)+' 个手工花括号延伸片/无可见内容文本框归并到已存在的可伸缩公式括号；请核对公式校样。'})
+        if revisions and revision_policy=='accept':report['diagnostics'].append({'code':'WORD_REVISIONS_ACCEPTED','severity':'warning','message':'按明确策略接受全部修订，保留最终显示版本；已处理 '+str(revisions)+' 处。'})
+        for entry in object_audit:
+            report['diagnostics'].append({'code':'MATHTYPE_CONVERTED','severity':'info','message':__import__('json').dumps(entry,separators=(',',':'))})
         return {'blocks':blocks,'notes':notes,'warnings':warnings,'importReports':[report]}

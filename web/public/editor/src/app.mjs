@@ -163,7 +163,10 @@ function outline() {
 }
 async function render() {
   const version = ++renderVersion;
-  await document.fonts.ready;
+  // FontFaceSet.ready can wait for document load while top-level module
+  // initialization itself is awaiting this render. Never block cloud startup.
+  const boundedFonts=promise=>Promise.race([promise.catch(()=>{}),new Promise(resolve=>setTimeout(resolve,2500))]);
+  await boundedFonts(document.fonts.ready);
   if(compositionUI){const plan=compositionUI.render($('pages'),zoom);if(plan){$('paperMeta').textContent=`自由版面 · ${plan.pages.length} 页`;$('stats').textContent=`${doc.composition.stories.length} 个文字流`;$('layoutWarnings')?.remove();status(plan.warnings.length?plan.warnings.map(w=>w.message).join('；'):'自由版面已更新',!!plan.warnings.length);return;}}
   await Promise.all(
     doc.blocks
@@ -182,8 +185,7 @@ async function render() {
     document.activeElement?.matches(".block[contenteditable]")
   )
     return;
-  await document.fonts.load('16px KaTeX_Main').catch(()=>{});
-  await document.fonts.load('16px KaTeX_Math').catch(()=>{});
+  await boundedFonts(Promise.all([document.fonts.load('16px KaTeX_Main'),document.fonts.load('16px KaTeX_Math')]));
   if (version !== renderVersion || document.activeElement?.matches('.block[contenteditable]')) return;
   const viewDoc=materializeReferences(doc),result = paginate(viewDoc, $("measure"));
   let diagnostic=document.getElementById('layoutWarnings');
@@ -686,6 +688,7 @@ setupPrintExport({getDoc:()=>doc,status});
 setupNativeEditor();
 
 setupRubyEditor({getDoc:()=>doc,getSelected:()=>selected,getSelectionRange:()=>selectionRange,change,status});
-await refresh();
+document.fonts.addEventListener('loadingdone',()=>{clearTimeout(paginationTimer);paginationTimer=setTimeout(()=>render(),100);});
+void refresh();
 await setupCloud({getDoc:()=>doc,status,replaceDoc:next=>change(()=>{doc=next;selected=doc.blocks[0]?.id;})});
 if (startupWarning) status(startupWarning, true);

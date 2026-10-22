@@ -11,6 +11,8 @@ W='{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
 SYMBOLS=dict(zip('αβγδεζηθικλμνξπρστυφχψω',
     ['\\'+s+' ' for s in 'alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi pi rho sigma tau upsilon phi chi psi omega'.split()]))
 SYMBOLS.update({'×':r'\times ','÷':r'\div ','≤':r'\leq ','≥':r'\geq ','≠':r'\neq ','∈':r'\in ','∉':r'\notin ','∪':r'\cup ','∩':r'\cap ','∞':r'\infty ','⋮':r'\vdots ','⋯':r'\cdots ','…':r'\ldots ','⋱':r'\ddots ','−':'-','→':r'\to ','∂':r'\partial ','∇':r'\nabla ','∅':r'\emptyset ','∀':r'\forall ','∃':r'\exists '})
+SYMBOLS.update({'Γ':r'\Gamma ','Δ':r'\Delta ','Θ':r'\Theta ','Λ':r'\Lambda ','Ξ':r'\Xi ','Π':r'\Pi ','Σ':r'\Sigma ','Υ':r'\Upsilon ','Φ':r'\Phi ','Ψ':r'\Psi ','Ω':r'\Omega ',
+                '⊂':r'\subset ','⊆':r'\subseteq ','⊃':r'\supset ','⊇':r'\supseteq ','ℕ':r'\mathbb{N}','ℝ':r'\mathbb{R}','ℤ':r'\mathbb{Z}','↦':r'\mapsto ','∫':r'\int ','∑':r'\sum ','\u2009':r'\,','\u00a0':r'\ '})
 DELIMITERS={'':'.','.':'.','(':'(',')':')','（':'(', '）':')','[':'[',']':']','{':r'\{','}':r'\}','|':r'\vert ','‖':r'\Vert ','∥':r'\Vert ','⌈':r'\lceil ','⌉':r'\rceil ','⌊':r'\lfloor ','⌋':r'\rfloor ','⟨':r'\langle ','⟩':r'\rangle ','〈':r'\langle ','〉':r'\rangle '}
 def literal(text,preserve_spaces=False):
     escaped=''.join(r'\ ' if c==' ' and preserve_spaces else {'\\':r'\backslash ','{':r'\{','}':r'\}','%':r'\%','#':r'\#','&':r'\&','$':r'\$','_':r'\_'}.get(c,SYMBOLS.get(c,c)) for c in text)
