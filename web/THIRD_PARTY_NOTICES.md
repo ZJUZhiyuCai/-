@@ -1,5 +1,7 @@
 # 第三方组件
 
+MathType MTEF 解析使用 mathtype2omml 的 mathtypejx/mtef 子模块，来源 https://github.com/uwjiaoxing/mathtype2omml ，提交 fe5293326ec047bd943de88293add86b8a9050d3（MIT）。许可、字体映射的 BSD 通知和修改说明保留在 journal-engine/vendor/。本项目修正矩阵行列转换，并独立实现 MathML → OMML 转换；不分发 Microsoft 的 MML2OMML.XSL。旧 DOC 和矢量图片转换分别调用服务器自行安装的 LibreOffice 和 Inkscape，不捆绑其二进制。
+
 公式预览使用 KaTeX 0.19.0，按 MIT 许可分发。原始许可保存在 `public/editor/vendor/katex/LICENSE`，项目地址 https://github.com/KaTeX/KaTeX 。代码、CSS 与字体来自官方 npm 包，浏览器运行时不访问 CDN。
 
 网站自由版面 PDF 使用 pdf-lib 1.17.1 和 @pdf-lib/fontkit 1.1.1（MIT）。通过 npm 安装，许可证保留在安装包中，不捆绑用户字体。字体嵌入权限由字体所有者及字体的 OS/2 标志决定。独立验收用 Fandol 字体来自本机 TeX Live，仅用于本地测试，不随网站分发。
@@ -16,3 +18,5 @@ ICC conversion uses the unchanged JavaScript and WebAssembly runtime from `@kitt
 PNG decoding uses `@pdf-lib/upng@1.0.1` (MIT). JPEG encoding/decoding uses `jpeg-js@0.4.4` (BSD-3-Clause; decoder derived from PDF.js under Apache-2.0), https://github.com/jpeg-js/jpeg-js . `vendor/jpeg-cmyk/decoder.mjs` is adapted from its decoder: CommonJS/export wrappers removed and a bounded `decodeCmyk` entry added to preserve CMYK samples before RGB conversion. Original copyright notice is preserved. Full licenses: `vendor/jpeg-cmyk/LICENSE-BSD` and `LICENSE-APACHE`.
 
 Additional color test fixture provenance and reproduction instructions are in `tests/fixtures/README.md`. The bundled synthetic CMYK ICC is an original test fixture, not a print production profile.
+
+整期 Word 写入使用 python-docx 1.2.0（MIT），来源 https://github.com/python-openxml/python-docx 。服务端使用自行安装的 LibreOffice Writer 和 Python UNO 生成 PDF，不捆绑其二进制。整期流程按用户授权整合 InkQ 的选稿、目录回算和原生 Word 交付方式；Word 渲染临时副本采用其字面数学字符兼容思路，书页源工程及交付 Word 不改写原始 OMML。未复制 InkQ 的账号、额度账本或其他客户数据。

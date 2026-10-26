@@ -6,6 +6,7 @@ import {join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {documentFingerprint} from '../public/editor/src/project-sync.mjs';
 import {assertJournalFonts} from '../public/editor/src/journal-fonts.mjs';
+import {createIssueStore} from './issue-store.mjs';
 
 const sha=value=>createHash('sha256').update(value).digest('hex');
 const safeId=value=>{if(!/^[a-zA-Z0-9][\w-]{0,79}$/.test(value))throw Error('INVALID_PROOF_ID');return value;};
@@ -30,7 +31,7 @@ export async function createJournalRuntime({directory,python='python3',engineDir
    const child=spawn(python,[join(resolve(engineDirectory),'worker.py')],{env:{...process.env,...env,PYTHONUTF8:'1',PYTHONIOENCODING:'utf-8'},stdio:['pipe','pipe','pipe'],detached:process.platform!=='win32'});
    let stdout=[],stderr=[],n=0,stderrSize=0,killed=false;
    const kill=()=>{killed=true;try{if(process.platform==='win32')child.kill('SIGKILL');else process.kill(-child.pid,'SIGKILL');}catch{}};
-   active=kill;const timer=setTimeout(kill,timeoutMs);
+   active=kill;const timer=setTimeout(kill,request.method==='render_issue'?Math.max(timeoutMs,900000):timeoutMs);
    child.stdout.on('data',c=>{n+=c.length;if(n>30*1024*1024)kill();else stdout.push(c);});
    child.stderr.on('data',c=>{if(stderrSize<8000){stderr.push(c.subarray(0,8000-stderrSize));stderrSize+=c.length;}});
    child.on('error',e=>{clearTimeout(timer);fail(Error('JOURNAL_RUNTIME_UNAVAILABLE: '+e.message));});
@@ -44,14 +45,16 @@ export async function createJournalRuntime({directory,python='python3',engineDir
  async function status(owner,id){return JSON.parse(await readFile(join(folder(owner,id),'status.json')).catch(e=>{if(e.code==='ENOENT')throw Error('PROOF_NOT_FOUND');throw e;}));}
  const capabilities={enabled:false,engine:'XeLaTeX',asynchronousProof:true,scope:'complete-journal-document'};
  // Misconfigured native output is explicitly unavailable; the editor still opens.
- try{Object.assign(capabilities,{environment:await worker({method:'probe'}),enabled:true});}catch(e){capabilities.reason=e.message;}
+ try{const environment=await worker({method:'probe'});Object.assign(capabilities,{environment,issue:environment.issue,enabled:true});}catch(e){capabilities.reason=e.message;}
  function ready(){if(!capabilities.enabled)throw Error('JOURNAL_RUNTIME_UNAVAILABLE: '+capabilities.reason);reserve();}
  return {
   capabilities,
-  async importDocx(base64){ready();return track(worker({method:'import',base64}));},
-  async inspectDocx(base64){ready();return track(worker({method:'inspect',base64}));},
-  start(owner,record){
-   assertJournalFonts(record.document,capabilities.environment?.fonts);
+  issues:createIssueStore(root),
+  async importDocx(base64,revisionPolicy='require-clean'){ready();return track(worker({method:'import',base64,revisionPolicy}));},
+  async inspectDocx(base64,revisionPolicy='require-clean'){ready();return track(worker({method:'inspect',base64,revisionPolicy}));},
+  start(owner,record,kind='article'){
+   for(const document of kind==='issue'?record.document.articles.map(a=>a.document):[record.document])assertJournalFonts(document,capabilities.environment?.fonts);
+   if(kind==='issue'&&capabilities.issue?.enabled===false)throw Error(capabilities.issue.reason||'WORD_RUNTIME_UNAVAILABLE');
    // Reserve before any filesystem await: simultaneous requests cannot both start.
    ready();let resolveStart,rejectStart;
    const started=new Promise((resolve,reject)=>{resolveStart=resolve;rejectStart=reject;});
@@ -59,15 +62,16 @@ export async function createJournalRuntime({directory,python='python3',engineDir
     let meta,dir;
     try{
      const {projectId,revision,document}=structuredClone(record);
+     if(Buffer.byteLength(JSON.stringify(document))>28*1024*1024)throw Error('ISSUE_SOURCE_LIMIT_28_MB');
      const sourceDocumentSha256=sha(documentFingerprint(document));
      const parent=join(root,sha(owner));await mkdir(parent,{recursive:true,mode:0o700});
      const ids=await readdir(parent);if(ids.length>=maxProofs)throw Error('JOURNAL_PROOF_STORAGE_LIMIT');
      const id='proof-'+randomUUID();dir=folder(owner,id);
      await mkdir(dir,{mode:0o700});
-     meta={proofId:id,projectId,revision,sourceDocumentSha256,status:'running',createdAt:new Date().toISOString()};
+     meta={proofId:id,projectId,revision,sourceDocumentSha256,kind,...(kind==='issue'?{sourceArticles:document.articles.map(({projectId,revision,document})=>({projectId,revision,sha256:sha(documentFingerprint(document))}))}:{}),status:'running',createdAt:new Date().toISOString()};
      await writeFile(join(dir,'document.json'),JSON.stringify(document),{mode:0o600});await atomic(join(dir,'status.json'),meta);
      resolveStart(meta);
-     const result=await worker({method:'render',document,directory:dir,revision,sourceDocumentSha256});
+     const result=await worker({method:kind==='issue'?'render_issue':'render',document,directory:dir,revision,sourceDocumentSha256});
      await atomic(join(dir,'status.json'),{...meta,...result,status:'complete'});
     }catch(error){
      rejectStart(error);
@@ -77,6 +81,18 @@ export async function createJournalRuntime({directory,python='python3',engineDir
    return started;
   },
   status,
+  async latestIssueProof(owner,issueId){
+   const parent=join(root,sha(owner));let ids;try{ids=await readdir(parent);}catch(e){if(e.code==='ENOENT')return null;throw e;}
+   let latest=null;for(const id of ids.filter(id=>/^proof-[\w-]+$/.test(id))){const m=await status(owner,id);if(m.kind==='issue'&&m.projectId===issueId&&(!latest||m.createdAt>latest.createdAt))latest=m;}
+   return latest?.proofId||null;
+  },
+  async artifact(owner,id,artifactId,offset,limit){
+   const m=await status(owner,id);if(m.status!=='complete')throw Error('PROOF_NOT_COMPLETE');
+   const a=m.artifacts?.find(a=>a.id===artifactId);if(!a||!/^[\w.-]+$/.test(a.filename))throw Error('ARTIFACT_NOT_FOUND');
+   const bytes=await readFile(join(folder(owner,id),a.filename));if(sha(bytes)!==a.sha256)throw Error('ARTIFACT_HASH_MISMATCH');
+   if(offset>bytes.length)throw Error('INVALID_OFFSET');const end=Math.min(bytes.length,offset+limit);
+   return {...a,totalBytes:bytes.length,offset,nextOffset:end,done:end===bytes.length,base64:bytes.subarray(offset,end).toString('base64')};
+  },
   async report(owner,id){
    const m=await status(owner,id);if(m.status!=='complete')throw Error('PROOF_NOT_COMPLETE');
    const bytes=await readFile(join(folder(owner,id),'report.json'));

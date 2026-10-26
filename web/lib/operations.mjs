@@ -46,6 +46,7 @@ export function applyOperations(input,rawOps){
     case 'set_layout':Object.assign(doc.layout,o.patch);break;
     case 'insert_blocks':insert(o.blocks,o.beforeId);break;
     case 'update_block':{const b=get(o.blockId);if(o.patch.text!==undefined)replaceBlockText(b,o.patch.text);Object.assign(b,o.patch);break;}
+    case 'set_text_block_type':{const b=get(o.blockId);if(!['paragraph','heading'].includes(b.type))throw Error('TYPE_CHANGE_NEEDS_TEXT_BLOCK');b.type=o.type;if(o.type==='heading')b.level=o.level;else delete b.level;break;}
     case 'replace_text':{const b=get(o.blockId);boundary(b.text,o.start);boundary(b.text,o.end);if(o.end<o.start)throw Error('INVALID_RANGE');replaceBlockText(b,b.text.slice(0,o.start)+o.text+b.text.slice(o.end));break;}
     case 'delete_blocks':remove(o.blockIds);break;
     case 'move_blocks':move(o.blockIds,o.beforeId);break;

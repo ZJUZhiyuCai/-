@@ -16,6 +16,15 @@ def inline_breaks(tex):
     before it. Break at its outer separators, never inside a fraction, matrix,
     script or paired delimiter. The source expression remains unchanged.
     """
+    # Word often wraps a complete comma-separated assignment list in one
+    # upright run. TeX cannot break inside that math alphabet group. Preserve
+    # the alphabet on each item and offer breaks between complete items.
+    def alphabet_list(m):
+        contents=m[2]
+        if ',' not in contents or any(c in contents for c in '()[]'):return m[0]
+        pieces=re.findall(r'[^,]*,|[^,]+$',contents)
+        return r'\allowbreak '.join('\\'+m[1]+'{'+p+'}' for p in pieces)
+    tex=re.sub(r'\\(mathrm|mathit|mathbf|mathsf|mathtt|symup)\{([^{}]+)\}',alphabet_list,tex)
     out=[];depth=0;delimiters=0;environments=0;i=0
     while i<len(tex):
         if tex[i]=='\\':

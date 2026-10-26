@@ -1,6 +1,9 @@
 import {z} from 'zod/v4';
 import {id} from './schema.mjs';
 import {documentDiagnostics} from '../public/editor/src/integrity.mjs';
+import {journalPlan} from './journal-plan.mjs';
+import {journal as journalSchema} from './schema.mjs';
+import {journalRoles} from '../public/editor/src/journal.mjs';
 const obj=s=>z.object(s).strict();
 export function addJournalTools(add,store){
  const runtime=()=>{if(!store?.journalRuntime)throw Error('JOURNAL_RUNTIME_UNAVAILABLE: 请为独立服务器配置 Python 和 XeLaTeX');return store.journalRuntime;};
@@ -8,9 +11,10 @@ export function addJournalTools(add,store){
  async function refreshProof(m){const current=await store.get(m.projectId);return {...m,stale:current.revision!==m.revision};}
  async function getProof(a){return refreshProof(await runtime().status(store.owner,a.proofId));}
  add('get_journal_capabilities','查询当前部署是否启用真实 OMML 导入和全文期刊 PDF。',obj({}),()=>store?.journalRuntime?.capabilities||{enabled:false,reason:'需配置独立服务器的 journal 运行时；Workers 不支持本地 TeX。'},true);
- add('inspect_journal_docx','只读检查 DOCX 是否能完整导入。返回公式/图表数量、每个未支持对象的原稿 XML 位置和资产指纹；不创建工程，不执行 OLE，不表示可发印。',obj({base64:z.string().max(28000000).regex(/^[A-Za-z0-9+/]+={0,2}$/)}),a=>runtime().inspectDocx(a.base64),true);
- add('import_journal_docx','从 DOCX 新建完整期刊工程；保存每个公式的 OMML 和摘要，未支持内容拒绝写入。不会覆盖现有工程。',obj({projectId:id,title:z.string().max(120),base64:z.string().max(28000000).regex(/^[A-Za-z0-9+/]+={0,2}$/)}),async a=>{
-  const parsed=await runtime().importDocx(a.base64);
+ add('inspect_journal_docx','只读检查 DOCX 是否能完整导入。返回公式/图表数量、每个未支持对象的原稿 XML 位置和资产指纹；不创建工程，不执行 OLE，不表示可发印。',obj({revisionPolicy:z.enum(['require-clean','accept']).default('require-clean'),base64:z.string().max(28000000).regex(/^[A-Za-z0-9+/]+={0,2}$/)}),a=>runtime().inspectDocx(a.base64,a.revisionPolicy),true);
+ add('plan_journal_layout','生成可审查的期刊自动排版操作：首面角色、真实章节、图表与原始像素 DPI 约束。不改动原文；返回源修订，使用 apply_changes dryRun 后原子提交。未识别角色由 roles 明确覆盖。',obj({projectId:id,width:z.number().min(100).max(320).default(210),height:z.number().min(140).max(450).default(285),columns:z.number().int().min(1).max(4).default(1),minDpi:z.number().min(150).max(1200).default(300),roles:z.record(id,z.enum(journalRoles)).default({}),journal:journalSchema.optional()}),async a=>{const r=await store.get(a.projectId);return {projectId:r.projectId,expectedRevision:r.revision,...journalPlan(r.document,a)};},true);
+ add('import_journal_docx','从 Word 新建完整期刊工程；保存每个公式的 OMML 和摘要，未支持内容拒绝写入。revisionPolicy=accept 明确接受全部修订；默认遇到修订拒绝导入。不会覆盖现有工程。',obj({projectId:id,title:z.string().max(120),base64:z.string().max(28000000).regex(/^[A-Za-z0-9+/]+={0,2}$/),revisionPolicy:z.enum(['require-clean','accept']).default('require-clean')}),async a=>{
+  const parsed=await runtime().importDocx(a.base64,a.revisionPolicy);
   return store.create(a.projectId,{format:'open-typesetter',version:4,title:a.title,blocks:parsed.blocks,notes:parsed.notes,importReports:parsed.importReports});
  });
  add('start_journal_proof','为指定修订启动全文 PDF 校样。异步执行；通过 get_journal_proof 查询，支持恢复连接。首面、公式、表格和锚点使用同一源工程；自由版面混排拒绝遗漏。',obj({projectId:id,expectedRevision:z.number().int().positive()}),async a=>{

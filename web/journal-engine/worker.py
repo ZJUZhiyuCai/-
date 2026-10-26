@@ -27,10 +27,17 @@ def main():
         imports={'legacyMath':{'format':'MTEF 5','available':importlib.util.find_spec('olefile') is not None},
                  'emf':{'available':bool(os.environ.get('SHUYE_SOFFICE') or shutil.which('soffice')) and importlib.util.find_spec('pypdfium2') is not None,
                         'renderer':'LibreOffice Draw','verification':'dependencies detected; each asset must pass conversion and text checks'}}
-        print(json.dumps({'engine': result['report']['renderer'], 'python': sys.version.split()[0], 'fonts': probe_fonts(),'imports':imports}))
+        issue={'enabled':False,'engine':'LibreOffice Writer','editableWord':True,'measuredContents':True}
+        try:
+            import docx,shutil,subprocess,os
+            if not shutil.which('libreoffice'):raise ValueError('LibreOffice not installed')
+            subprocess.run([os.environ.get('SHUYE_UNO_PYTHON','/usr/bin/python3'),'-c','import uno'],check=True,capture_output=True,timeout=10)
+            issue['enabled']=True
+        except Exception as e:issue['reason']='WORD_RUNTIME_UNAVAILABLE: '+str(e)[:300]
+        print(json.dumps({'engine':result['report']['renderer'],'python':sys.version.split()[0],'fonts':probe_fonts(),'imports':imports,'issue':issue}))
     elif request['method'] in ('import', 'inspect'):
         data = base64.b64decode(request['base64'], validate=True)
-        result = import_docx(data)
+        result = import_docx(data,revision_policy=request.get('revisionPolicy','require-clean'))
         if request['method'] == 'inspect':
             print(json.dumps({'importReports': result['importReports'],
                               'importable': not any(d['severity']=='error' for r in result['importReports'] for d in r['diagnostics'])}, ensure_ascii=False))
@@ -41,6 +48,9 @@ def main():
             summary='数学区 '+str(c['importedMath'])+'/'+str(c['sourceMath'])+'（旧式公式 '+str(c['sourceLegacyMath'])+'），图片 '+str(c['importedImages'])+'/'+str(c['sourceImages'])+'。'
             raise ValueError('DOCX_IMPORT_UNSUPPORTED: '+summary+'; '.join(d['message'] for d in errors[:12])+'；完整逐项定位请使用 inspect_journal_docx。')
         print(json.dumps(result, ensure_ascii=False))
+    elif request['method'] == 'render_issue':
+        from issue_export import render_issue
+        print(json.dumps(render_issue(request), ensure_ascii=False))
     elif request['method'] == 'render':
         folder = Path(request['directory'])
         document = request['document']

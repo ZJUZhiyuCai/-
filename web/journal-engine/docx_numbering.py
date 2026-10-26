@@ -100,7 +100,7 @@ def check_fields(root,warnings,stats=None):
         value=' '.join(instruction.split())
         # MathType's hidden section/chapter counters carry no displayed result.
         # Do not execute the macro or exempt visible SEQ fields without \\h.
-        return value=='ADDIN EN.CITE.DATA' or value=='MACROBUTTON MTEditEquationSection2' or bool(re.fullmatch(r'SEQ MT(?:Eqn|Sec|Chap) \\r(?: [0-9]+)? \\h \\\* MERGEFORMAT',value))
+        return value=='ADDIN EN.CITE.DATA' or value in ('MACROBUTTON MTEditEquationSection2',r'MACROBUTTON MTPlaceRef \* MERGEFORMAT') or bool(re.fullmatch(r'SEQ MT(?:Eqn|Sec|Chap) \\r(?: [0-9]+)? \\h \\\* MERGEFORMAT',value))
     stack=[];count=0;metadata_count=0
     for e in root.iter():
         if e.tag==W+'fldSimple':
@@ -122,6 +122,9 @@ def check_fields(root,warnings,stats=None):
         elif e.tag==W+'t':
             for f in stack:
                 if f['separated']:f['text']+=e.text or ''
+        elif e.tag=='{http://schemas.openxmlformats.org/officeDocument/2006/math}oMath':
+            for f in stack:
+                if f['separated']:f['text']+='[formula]'
     if stack:warnings.append('Word 域边界未闭合，须核对原稿。')
     if stats is not None:stats.update({'sourceFields':count,'metadataFields':metadata_count,'visibleFields':count-metadata_count})
     return count-metadata_count

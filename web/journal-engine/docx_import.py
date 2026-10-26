@@ -19,18 +19,31 @@ def xml(data):
     return ET.fromstring(data)
 def utf16(s): return len(s.encode('utf-16-le'))//2
 
-def import_docx(data):
+def import_docx(data,revision_policy='require-clean'):
     if len(data)>20*1024*1024: raise ValueError('DOCX 不得超过 20 MB。')
+    if data.startswith(bytes.fromhex('d0cf11e0a1b11ae1')):
+        from word_compat import legacy_docx
+        result=import_docx(legacy_docx(data),revision_policy)
+        report=result['importReports'][0]
+        converted_hash=report['sourceSha256'];report['sourceSha256']=hashlib.sha256(data).hexdigest();report['sourceBytes']=len(data)
+        report['counts']['convertedLegacyDoc']=1
+        report['diagnostics'].append({'code':'LEGACY_DOC_CONVERTED','severity':'warning','message':'DOC 经隔离 LibreOffice 转为 DOCX；转换中间件 SHA-256：'+converted_hash+'。原稿摘要保持不变。'})
+        return result
     warnings = ['Word 导入保留可支持的内容结构；原分页、字体替代、浮动定位和复杂表格需核对。']
     with ZipFile(BytesIO(data)) as z:
         if len(z.infolist())>5000 or sum(i.file_size for i in z.infolist())>80*1024*1024: raise ValueError('Word 解压体积或文件数量过大。')
         root=xml(z.read('word/document.xml')); body=root.find('w:body',NS)
         if body is None: raise ValueError('Word 文档没有正文。')
         # OOXML alternatives represent the same content, never two copies.
+        from word_compat import accept_revisions,compose_groups,normalize_fence_extensions,transform_pictures,vector_png
+        revisions=accept_revisions(root,revision_policy)
+        alternates=0
         mc='{http://schemas.openxmlformats.org/markup-compatibility/2006}'
         def select_alternatives(parent):
+            nonlocal alternates
             for child in list(parent):
                 if child.tag==mc+'AlternateContent':
+                    alternates+=1
                     choices=child.findall(mc+'Choice');selected=next((c for c in choices if set(c.get('Requires','').split())<= {'wps','wpg','w14','wp14','a14'}),None)
                     if selected is None:selected=child.find(mc+'Fallback')
                     if selected is None:raise ValueError('Word 兼容结构没有受支持的分支。')
@@ -46,6 +59,11 @@ def import_docx(data):
         if 'word/_rels/document.xml.rels' in z.namelist():
             for r in xml(z.read('word/_rels/document.xml.rels')):
                 if r.get('TargetMode')!='External': rels[r.get('Id')]=posixpath.normpath('word/'+r.get('Target',''))
+        fence_extensions=normalize_fence_extensions(root)
+        # Preserve grouped source images as separate assets; never resample them.
+        assets,groups,group_pictures=compose_groups(root,z.read,rels,preserve_pictures=True)
+        transformed,picture_audit=transform_pictures(root,z.read,rels);assets.update(transformed)
+        def read_asset(path):return assets[path] if path in assets else z.read(path)
         evidence=SourceEvidence(root,z,rels)
         legacy_counts=evidence.ole_objects(root)
         from emf import convert_emfs
@@ -71,18 +89,18 @@ def import_docx(data):
                 # A style without rPr may still inherit another character style.
                 if props is None:props=ET.Element(W+'rPr')
         settings=xml(z.read('word/settings.xml')) if 'word/settings.xml' in z.namelist() else None
-        notes=[];custom_markers={};marker_text_nodes=set();group_tables=0
+        notes=[];custom_markers={};group_tables=0
         for run in root.iter(W+'r'):
             children=list(run)
             for index,ref in enumerate(children):
                 if ref.tag not in (W+'footnoteReference',W+'endnoteReference') or ref.get(W+'customMarkFollows') not in ('1','true','on'):continue
                 following=children[index+1:index+2]
                 key=('end-' if local(ref)=='endnoteReference' else '')+ref.get(W+'id','')
-                if len(following)!=1 or following[0].tag!=W+'t' or not 1<=len(following[0].text or '')<=20:
+                if len(following)!=1 or following[0].tag!=W+'t' or not following[0].text:
                     warnings.append('自定义注释标记缺少紧随的文字，须核对原稿。');continue
-                value=following[0].text
+                value=following[0].text[0]
                 if key in custom_markers and custom_markers[key]!=value:warnings.append('同一注释有不同的自定义标记，须核对原稿。');continue
-                custom_markers[key]=value;marker_text_nodes.add(following[0])
+                custom_markers[key]=value;following[0].text=following[0].text[1:]
         for e in root.iter():
             if e.tag in {W+n for n in ('ins','del','moveFrom','moveTo')}:
                 warnings.append('修订或域 '+local(e)+' 尚未执行接受/拒绝/更新策略，请先在原稿中确认。')
@@ -99,7 +117,8 @@ def import_docx(data):
                 fmt=val(props,'numFmt','decimal');start=int(val(props,'numStart','1'))
                 if val(props,'numRestart','continuous')!='continuous':warnings.append('注释按页/节重启编号尚未还原，须核对原稿。')
                 refs=list(dict.fromkeys(e.get(W+'id') for e in root.iter(W+kind+'Reference')))
-                for n in xml(z.read(part)):
+                note_root=xml(z.read(part));revisions+=accept_revisions(note_root,revision_policy)
+                for n in note_root:
                     ident=n.get(W+'id','')
                     if n.get(W+'type') in ('separator','continuationSeparator') or ident.startswith('-'): continue
                     if any(local(c) in ('oMath','drawing','pict','object','tbl') for c in n.iter()): warnings.append('注释 '+ident+' 含公式、图表或对象，当前只提取文字，须核对原稿。')
@@ -109,6 +128,7 @@ def import_docx(data):
                         try:note['marker']=custom_markers.get(note['id']) or format_number(start+automatic.index(ident),fmt)
                         except ValueError as error:warnings.append('注释 '+ident+' '+str(error)+'，须核对原稿。')
                     notes.append(note)
+                    if note['id'] in custom_markers:note['marker']=custom_markers[note['id']]
         from omml import to_tex
         def math(e): return to_tex(e,warnings)
         def math_source(e):
@@ -121,24 +141,24 @@ def import_docx(data):
                 k=local(e)
                 if k=='wgp':
                     pictures=[c for c in e if local(c)=='pic'];positions=[]
-                    if len(pictures)!=2 or any(local(c) not in ('pic','cNvGrpSpPr','grpSpPr') for c in e):
-                        warnings.append('组合图不是受支持的双图布局，须核对原稿。');return
+                    if not 2<=len(pictures)<=32 or any(local(c) not in ('pic','cNvPr','cNvGrpSpPr','grpSpPr') for c in e):
+                        warnings.append('组合图不是受支持的单行/单列布局，须核对原稿。');return
                     for pic in pictures:
                         transform=pic.find('.//a:xfrm',NS);blips=pic.findall('.//a:blip',NS)
                         offset=transform.find('a:off',NS) if transform is not None else None
                         if offset is None or len(blips)!=1 or any(k in transform.attrib for k in ('rot','flipH','flipV')) or any(any(float(v)!=0 for v in c.attrib.values()) for c in pic.findall('.//a:srcRect',NS)):
                             warnings.append('组合图裁切/旋转或位置不受支持，须核对原稿。');return
                         positions.append((int(offset.get('x','0')),int(offset.get('y','0')),blips[0]))
-                    horizontal=abs(positions[0][1]-positions[1][1])<12700
-                    vertical=abs(positions[0][0]-positions[1][0])<12700
+                    horizontal=max(p[1] for p in positions)-min(p[1] for p in positions)<12700
+                    vertical=max(p[0] for p in positions)-min(p[0] for p in positions)<12700
                     if horizontal==vertical:warnings.append('组合图不能确定横排或纵排，须核对原稿。');return
                     positions.sort(key=lambda p:p[0] if horizontal else p[1]);start=len(extras);images=[]
                     for _,_,blip in positions:
                         before=len(extras);visit(blip)
                         if len(extras)==before+1:images.append(extras[-1])
-                    if len(images)!=2:return
+                    if len(images)!=len(pictures):return
                     for im in images:im['width']=100
-                    table={'id':uid(),'type':'table','text':'','rows':[['','']] if horizontal else [[''],['']],'headerRows':0,'borderStyle':'none','captionPosition':'below','placement':'full-width','cellImages':[{'row':0 if horizontal else i,'col':i if horizontal else 0,'imageId':im['id']} for i,im in enumerate(images)]}
+                    table={'id':uid(),'type':'table','text':'','rows':[['']*len(images)] if horizontal else [[''] for _ in images],'headerRows':0,'borderStyle':'none','captionPosition':'below','placement':'full-width','cellImages':[{'row':0 if horizontal else i,'col':i if horizontal else 0,'imageId':im['id']} for i,im in enumerate(images)]}
                     extras.insert(start,table);group_tables+=1;return
                 if e.tag==W+'object':
                     objects=list(e.iter(O+'OLEObject'))
@@ -176,10 +196,13 @@ def import_docx(data):
                             mark['fontFamily']='kai' if 'kai' in name or '楷' in name else 'sans' if any(x in name for x in ['hei','黑','arial']) else 'serif'
                     if len(mark)>2 and mark['end']>start: marks.append(mark)
                     return
-                if e.tag==W+'t':
-                    if e not in marker_text_nodes:text+=e.text or ''
+                if e.tag==W+'t': text+=e.text or ''; return
+                if e.tag==W+'sym':
+                    # Adobe Symbol's multiplication slot (including the Word
+                    # private-use encoding). Unknown mappings remain blocking.
+                    if e.get(W+'font','').lower()=='symbol' and e.get(W+'char','').upper() in ('F0D7','00D7','D7'):text+='×'
+                    else:warnings.append('Word 字体编码符号尚未转换：'+str(e.get(W+'font'))+'/'+str(e.get(W+'char')))
                     return
-                if e.tag==W+'sym': warnings.append('Word 字体编码符号尚未转换，须按原稿恢复符号。');return
                 if e.tag in (W+'tab',W+'br',W+'cr'): text+='\t' if k=='tab' else '\n'; return
                 if e.tag in (W+'footnoteReference',W+'endnoteReference'):
                     text+='[^'+('end-' if k=='endnoteReference' else '')+e.get(W+'id','')+']'; return
@@ -189,13 +212,14 @@ def import_docx(data):
                         if path in vector_assets:extras.append({'id':uid(),'type':'image','width':80,'text':'',**vector_assets[path]})
                         else:evidence.add('DOCX_IMAGE_UNSUPPORTED','EMF 未导入：'+path+'；'+(vector_error or '缺少内嵌图像'),e,path)
                         return
-                    if path in z.namelist() and ext in ('png','jpg','jpeg','webp','tif','tiff'):
-                        image=z.read(path)
+                    if (path in assets or path in z.namelist()) and ext in ('png','jpg','jpeg','webp','tif','tiff','wmf'):
+                        image=read_asset(path)
+                        if ext=='wmf':image=vector_png(image,ext);ext='png'
                         if ext in ('tif','tiff'):
                             try:
                                 from PIL import Image
                                 with Image.open(BytesIO(image)) as im:
-                                    if im.width*im.height>25000000 or getattr(im,'n_frames',1)!=1: raise ValueError(str(im.width)+'×'+str(im.height)+' 像素、'+str(getattr(im,'n_frames',1))+' 帧；仅支持单帧且不超过 25 MP 的 TIFF')
+                                    if im.width*im.height>125000000 or getattr(im,'n_frames',1)!=1: raise ValueError(str(im.width)+'×'+str(im.height)+' 像素、'+str(getattr(im,'n_frames',1))+' 帧；仅支持单帧且不超过 125 MP 的 TIFF')
                                     if im.mode not in ('1','L','LA','RGB','RGBA','P'): raise ValueError('TIFF 色彩/位深 '+im.mode+' 不能无损转换到 PNG')
                                     im.load();out=BytesIO();im.save(out,format='PNG');image=out.getvalue();ext='png'
                             except (ImportError,OSError,ValueError) as error:
@@ -317,6 +341,7 @@ def import_docx(data):
                     if fallback: blocks.append({'id':uid(),'type':'paragraph','text':fallback})
         walk(body)
         if any(n.startswith('word/header') or n.startswith('word/footer') for n in z.namelist()): warnings.append('原 Word 页眉页脚未导入；请在版式设置中重建。')
+        if revisions and revision_policy!='accept':warnings.append('WORD_REVISIONS_REQUIRE_POLICY: 需显式选择 revisionPolicy=accept 或提交已确认的稿件。')
         warnings=list(dict.fromkeys(warnings))
         source_omml_math=sum(1 for e in root.iter(M+'oMath'))
         source_math=source_omml_math+legacy_counts['sourceLegacyMath']
@@ -336,4 +361,8 @@ def import_docx(data):
         report['counts']['importedImageGroups']=group_tables
         report['diagnostics'].extend(evidence.diagnostics)
         warnings.extend(d['message'] for d in evidence.diagnostics)
+        report['counts'].update(sourceRevisions=revisions,acceptedRevisions=revisions if revision_policy=='accept' else 0,alternateBranchesSelected=alternates,normalizedFenceExtensions=fence_extensions,transformedPictures=len(picture_audit))
+        for entry in picture_audit:report['diagnostics'].append({'code':'WORD_PICTURE_TRANSFORM','severity':'info','message':__import__('json').dumps(entry,separators=(',',':'))})
+        if fence_extensions:report['diagnostics'].append({'code':'WORD_FENCE_EXTENSIONS','severity':'warning','message':'已归并 '+str(fence_extensions)+' 个手工公式括号延伸片/空文本框，请核对公式校样。'})
+        if revisions and revision_policy=='accept':report['diagnostics'].append({'code':'WORD_REVISIONS_ACCEPTED','severity':'warning','message':'按明确策略接受全部修订，保留最终显示版本；已处理 '+str(revisions)+' 处。'})
         return {'blocks':blocks,'notes':notes,'warnings':warnings,'importReports':[report]}

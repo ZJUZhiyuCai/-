@@ -47,6 +47,20 @@ test('journal timeout and graceful shutdown persist failure and allow recovery',
   const restart=await createJournalRuntime(f.opts);try{assert.equal((await restart.status('alice','proof-interrupted')).error,'WORKER_INTERRUPTED_RETRY');assert.equal((await completed(restart,(await restart.start('alice',record())).proofId)).status,'complete');}finally{await restart.close();}
  }finally{await f.cleanup();}
 });
+
+test('issue task discovery survives restart, stays owner-scoped and verifies chunk integrity',async()=>{
+ const f=await fixture();try{
+  const input={projectId:'issue-a',revision:1,document:{articles:[record()]}};
+  const m=await f.runtime.start('alice',input,'issue');await completed(f.runtime,m.proofId);
+  assert.equal(await f.runtime.latestIssueProof('alice','issue-a'),m.proofId);
+  assert.equal(await f.runtime.latestIssueProof('bob','issue-a'),null);
+  const dir=join(f.opts.directory,hash('alice'),m.proofId),meta=await f.runtime.status('alice',m.proofId),bytes=Buffer.from('editable document');
+  await writeFile(join(dir,'issue.docx'),bytes);await writeFile(join(dir,'status.json'),JSON.stringify({...meta,artifacts:[{id:'issue-word',filename:'issue.docx',sha256:hash(bytes)}]}));
+  const chunk=await f.runtime.artifact('alice',m.proofId,'issue-word',2,4);assert.equal(Buffer.from(chunk.base64,'base64').toString(),'itab');assert.equal(chunk.nextOffset,6);
+  await assert.rejects(()=>f.runtime.artifact('alice',m.proofId,'issue-word',100,4),/INVALID_OFFSET/);
+  await f.runtime.close();const restarted=await createJournalRuntime(f.opts);try{assert.equal(await restarted.latestIssueProof('alice','issue-a'),m.proofId);await writeFile(join(dir,'issue.docx'),'changed');await assert.rejects(()=>restarted.artifact('alice',m.proofId,'issue-word',0,4),/HASH_MISMATCH/);}finally{await restarted.close();}
+ }finally{await f.cleanup();}
+});
 test('missing runtime is disabled instead of advertising working OMML/PDF',async()=>{
  const f=await fixture({python:'/nonexistent/shuye-python'});try{
   assert.equal(f.runtime.capabilities.enabled,false);await assert.rejects(()=>f.runtime.importDocx('AA=='),/UNAVAILABLE/);

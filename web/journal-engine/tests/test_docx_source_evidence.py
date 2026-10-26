@@ -79,10 +79,10 @@ class SourceEvidenceTests(unittest.TestCase):
         body = '<w:p xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '+NS+'><w:r><w:drawing><a:blip r:embed="r1"/></w:drawing></w:r></w:p>'
         with patch('PIL.Image.open') as opened:
             image = opened.return_value.__enter__.return_value
-            image.width, image.height, image.n_frames = 11100, 10800, 1
+            image.width, image.height, image.n_frames = 12501, 10000, 1
             result = import_docx(package(body, {'word/_rels/document.xml.rels': '<Relationships><Relationship Id="r1" Target="media/chart.tiff"/></Relationships>', 'word/media/chart.tiff': b'tiff'}))
             image.load.assert_not_called()
         diagnostic = next(d for d in result['importReports'][0]['diagnostics'] if d['code']=='DOCX_IMAGE_UNSUPPORTED')
-        self.assertIn('11100×10800', diagnostic['message'])
-        self.assertIn('25 MP', diagnostic['message'])
+        self.assertIn('12501×10000', diagnostic['message'])
+        self.assertIn('125 MP', diagnostic['message'])
         self.assertEqual(result['importReports'][0]['counts']['importedImages'], 0)
