@@ -26,7 +26,7 @@ export function setupJournalCloud({api,connection,getDoc,button,status}){
  };
  button('自动排版期刊',async()=>{
   if(!connection.projectId)throw Error('请先保存到云端');
-  await connection.save();if(connection.dirty)throw Error('保存期间有新输入，请再次保存后排版');
+  if(connection.dirty)await connection.save();if(connection.dirty)throw Error('保存期间有新输入，请再次保存后排版');
   const projectId=connection.projectId,revision=connection.revision;
   const plan=await api('plan_journal_layout',{projectId});
   if(plan.expectedRevision!==revision)throw Error('REVISION_CONFLICT');
@@ -52,13 +52,16 @@ export function setupJournalCloud({api,connection,getDoc,button,status}){
   saveFile(`${getDoc().title}-校样报告.json`,JSON.stringify(result,null,2),'application/json');
   const errors=result.report.quality.diagnostics.filter(d=>d.severity==='error');
   status(`${result.pages} 页 PDF 和报告已下载；${result.report.formulaCoverage.total} 个数学区。${errors.length?`预检有 ${errors.length} 项阻断，请按报告修复。`:'请逐页核对公式和版面后交编辑验收。'}`,!!errors.length);
+  return result;
  }
- button('全文期刊 PDF',async()=>{
+ const generateProof=async()=>{
   if(!connection.projectId)throw Error('请先保存到云端');
-  await connection.save();if(connection.dirty)throw Error('保存期间有新输入，请再次保存后生成校样');
+  if(connection.dirty)await connection.save();if(connection.dirty)throw Error('保存期间有新输入，请再次保存后生成校样');
   const projectId=connection.projectId,proof=await api('start_journal_proof',{projectId,expectedRevision:connection.revision});
   try{localStorage.setItem(key(projectId),proof.proofId);}catch{}
-  await finish(proof.proofId,projectId);
- });
+  return finish(proof.proofId,projectId);
+ };
+ button('全文期刊 PDF',generateProof);
  button('取回期刊校样',async()=>{const projectId=connection.projectId,proofId=localStorage.getItem(key());if(!proofId)throw Error('当前工程没有已记录的校样任务');await finish(proofId,projectId);});
+ return {generateProof};
 }
