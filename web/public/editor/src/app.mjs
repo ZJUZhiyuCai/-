@@ -20,6 +20,7 @@ import { setupRubyEditor } from './ruby.mjs';
 import {materializeReferences} from './references.mjs';
 import {setupCloud} from './cloud-ui.mjs';
 import {setupReview} from './review-ui.mjs';
+import {setupProofmarkReview} from './proofmark-review-ui.mjs';
 import {makeTemplate} from './templates.mjs';
 import {importDocx} from './docx-web.mjs';
 import {setupComposition} from './composition-ui.mjs';
@@ -683,6 +684,7 @@ setupEditorTools({getDoc:()=>doc,getSelected:()=>selected,change,select:choose,s
 setupTableEditor({getDoc:()=>doc,getSelected:()=>selected,change,status});
 setupWorkspaceTools({getDoc:()=>doc,getSelected:()=>selected,change,select:choose,status,getSelectionRange:()=>selectionRange,replaceDoc:next=>change(()=>{doc=next;selected=doc.blocks[0]?.id;})});
 setupReview({getDoc:()=>doc,getSelected:()=>selected,change,status});
+setupProofmarkReview({getDoc:()=>doc});
 compositionUI=setupComposition({getDoc:()=>doc,change,refresh,status});
 setupPrintExport({getDoc:()=>doc,status});
 setupNativeEditor();
