@@ -73,7 +73,7 @@ class IssueTests(unittest.TestCase):
     def test_writer_compatibility_changes_only_render_copy_and_preserves_math_characters(self):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/'a.docx';copy=Path(d)/'render.docx';r=record();m=r['document']['blocks'][0]['inlineMath'][0]
-            m['sourceOmml']=m['sourceOmml'].replace('x+1','+');m['sourceSha256']=hashlib.sha256(m['sourceOmml'].encode()).hexdigest()
+            m['sourceOmml']=m['sourceOmml'].replace('x+1','+');m['sourceSha256']=hashlib.sha256(m['sourceOmml'].encode()).hexdigest();m['text']='+'
             export_article(r,PLAN,path,1);before=path.read_bytes();report=compatibility_copy(path,copy)
             self.assertEqual(path.read_bytes(),before);self.assertEqual(report['literalMathRunPatches'],1)
             with zipfile.ZipFile(copy) as z:

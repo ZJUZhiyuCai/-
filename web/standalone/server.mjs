@@ -44,7 +44,9 @@ export async function startServer({directory,publicDirectory,origin,basePath='/s
    if(path==='/api/session'){json(200,{user:owner||null});return;}
    if(path==='/signin-with-chatgpt'||path==='/login'){
     if(req.method!=='POST'){send(200,page('登录',form('/login',input('password','管理员密码'),'登录')+'<p>使用本站独立账号，无需 ChatGPT 登录。</p>'));return;}
-    const ip=req.socket.remoteAddress+'|'+(req.headers['x-real-ip']||'');
+    // Forwarding headers are attacker-controlled unless a separately configured
+    // trusted proxy strips them. Keep the budget on the actual connection peer.
+    const ip=req.socket.remoteAddress;
     const now=Date.now();for(const [key,a] of attempts)if(now-a.start>900000)attempts.delete(key);
     const attempt=attempts.get(ip)||{start:now,count:0};if(attempt.count>=10||attempts.size>10000){json(429,{error:'LOGIN_RATE_LIMIT'});return;}attempt.count++;attempts.set(ip,attempt);
     const fields=new URLSearchParams((await body(4096)).toString());

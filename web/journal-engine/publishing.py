@@ -280,7 +280,10 @@ def build_tex(doc,assets_dir,math_widths=None):
     # Fandol lacks some traditional Chinese characters. Prefer installed open
     # fonts as fallbacks; never replace the source character with a lookalike.
     pre+=r'\IfFontExistsTF{Noto Serif CJK SC}{\xeCJKsetup{AutoFallBack=true}\setCJKfallbackfamilyfont{\CJKrmdefault}{Noto Serif CJK SC}\setCJKfallbackfamilyfont{\CJKsfdefault}{Noto Sans CJK SC}}{}'+'\n'
-    pre+=r'\IfFontExistsTF{FreeSerif}{\newfontfamily\ShuyeGreekFont{FreeSerif}\newcommand{\ShuyeGreek}[1]{{\ShuyeGreekFont #1}}}{\newcommand{\ShuyeGreek}[1]{#1}}'+'\n'
+    # FreeSerif is part of the Linux runtime. macOS/Windows may instead have
+    # Times New Roman: use its real upright Greek glyphs before falling back
+    # to the selected text face (whose missing glyphs remain a hard error).
+    pre+=r'\IfFontExistsTF{FreeSerif}{\newfontfamily\ShuyeGreekFont{FreeSerif}\newcommand{\ShuyeGreek}[1]{{\ShuyeGreekFont #1}}}{\IfFontExistsTF{Times New Roman}{\newfontfamily\ShuyeGreekFont{Times New Roman}\newcommand{\ShuyeGreek}[1]{{\ShuyeGreekFont #1}}}{\newcommand{\ShuyeGreek}[1]{#1}}}'+'\n'
     if journal:
         math_font=journal.get('mathFont','tex-default')
         if math_font not in ('tex-default','stix-two'):raise ValueError('数学字体方案无效。')
@@ -306,9 +309,11 @@ def build_tex(doc,assets_dir,math_widths=None):
         year+=escape(journal.get('yearSuffix',''))
         pre+=r'\fancyhf{}\fancyhead[LE]{'+small+page_label+r'}\fancyhead[CE]{'+small+name+r'}\fancyhead[RE]{'+small+year+r'}\fancyhead[LO]{'+small+('第'+issue+'期' if issue else '')+r'}\fancyhead[CO]{'+small+escape(journal.get('shortTitle',''))+r'}\fancyhead[RO]{'+small+page_label+r'}'+'\n'
         overrides=''
-        if ('header' in layout and layout['header']!='书页 · 开源排版') or 'headerEven' in layout:
+        # Persisted projects contain both book header defaults. Their presence
+        # alone must not replace the journal's own running heads.
+        if any(key in layout and layout[key]!='书页 · 开源排版' for key in ('header','headerEven')):
             overrides+=r'\fancyhead{}\fancyhead[LE]{'+escape(layout.get('headerEven',layout.get('header','')))+r'}\fancyhead[RO]{'+escape(layout.get('header',''))+'}'
-        if 'footer' in layout or 'footerEven' in layout:
+        if any(key in layout and layout[key]!='{page}' for key in ('footer','footerEven')):
             overrides+=r'\fancyfoot{}\fancyfoot[LE]{'+footer(layout.get('footerEven',layout.get('footer','')))+r'}\fancyfoot[RO]{'+footer(layout.get('footer',''))+'}'
         pre+=overrides+'\n'
         left=r'\strut '+('第'+volume+'卷' if volume else '')+('第'+issue+'期' if issue else '')+r'\\ '+escape(journal.get('date',''))

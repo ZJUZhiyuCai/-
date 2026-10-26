@@ -77,7 +77,8 @@ try:
    if time.monotonic()>deadline:raise RuntimeError('WORD_RENDER_CONNECT_TIMEOUT')
    time.sleep(.1)
  desktop=ctx.ServiceManager.createInstanceWithContext('com.sun.star.frame.Desktop',ctx)
- doc=desktop.loadComponentFromURL(source.as_uri(),'_blank',0,(pv('Hidden',True),pv('ReadOnly',True),pv('MacroExecutionMode',4),pv('UpdateDocMode',0)))
+ # LibreOffice MacroExecMode.NEVER_EXECUTE is 0; 4 means ALWAYS_EXECUTE_NO_WARN.
+ doc=desktop.loadComponentFromURL(source.as_uri(),'_blank',0,(pv('Hidden',True),pv('ReadOnly',True),pv('MacroExecutionMode',0),pv('UpdateDocMode',0)))
  if doc is None:raise RuntimeError('WORD_RENDER_LOAD_FAILED')
  objects=doc.getEmbeddedObjects()
  for name in objects.ElementNames:
