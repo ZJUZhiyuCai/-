@@ -8,6 +8,24 @@ from test_docx_v2 import package
 
 
 class MergedImportTests(unittest.TestCase):
+    def test_bound_figure_callout_is_not_an_orphan_caption(self):
+        from proof import inspect_output
+        from pypdf import PdfWriter
+        raw=BytesIO();pdf=PdfWriter();pdf.add_blank_page(200,300);pdf.write(raw)
+        figure={'id':'figure','type':'image','anchor':{'targetId':'mention'},'captionIds':['caption']}
+        d={'journal':{'template':'cn-academic'},'blocks':[
+            {'id':'mention','type':'paragraph','text':'图 1 展示合成数据。'},figure,
+            {'id':'caption','type':'paragraph','text':'图 1 合成示意图'},
+            {'id':'missing','type':'paragraph','text':'图 2 缺失的图件'}]}
+        def missing():
+            report=inspect_output({'pdf':raw.getvalue(),'report':{}},d)['report']
+            return [x['blockId'] for x in report['quality']['diagnostics'] if x['code']=='FIGURE_ASSET_UNASSIGNED']
+        self.assertEqual(missing(),['missing'])
+        d['blocks'][0]['text']='图 3 展示另一图。'
+        self.assertEqual(missing(),['mention','missing'])
+        figure['captionIds']=[]
+        self.assertEqual(missing(),['mention','caption','missing'])
+
     def test_saved_book_defaults_do_not_override_journal_headers(self):
         from publishing import render_pdf
         from pypdf import PdfReader
