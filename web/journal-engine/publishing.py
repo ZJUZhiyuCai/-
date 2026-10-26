@@ -326,7 +326,9 @@ def build_tex(doc,assets_dir,math_widths=None):
         # Only an actual override may replace the journal masthead/running head.
         if any(key in layout and layout[key]!='书页 · 开源排版' for key in ('header','headerEven','headerOdd')):
             overrides+=r'\fancyhead{}\fancyhead[LE]{'+escape(layout.get('headerEven',layout.get('header','')))+r'}\fancyhead[RO]{'+escape(layout.get('headerOdd',layout.get('header','')))+'}'
-        if 'footer' in layout or 'footerEven' in layout:
+        # The normalized book footer is also a placeholder. Journals already
+        # carry their folio in the running head; do not duplicate it below.
+        if any(key in layout and layout[key]!='{page}' for key in ('footer','footerEven')):
             overrides+=r'\fancyfoot{}\fancyfoot[LE]{'+footer(layout.get('footerEven',layout.get('footer','')))+r'}\fancyfoot[RO]{'+footer(layout.get('footer',''))+'}'
         pre+=overrides+'\n'
         left=r'\strut '+('第'+volume+'卷' if volume else '')+('第'+issue+'期' if issue else '')+r'\\ '+escape(journal.get('date',''))

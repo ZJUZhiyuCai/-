@@ -11,12 +11,16 @@ class MergedImportTests(unittest.TestCase):
     def test_saved_book_defaults_do_not_override_journal_headers(self):
         from publishing import render_pdf
         from pypdf import PdfReader
-        d={'layout':{'fontSet':'fandol','header':'书页 · 开源排版','headerEven':'书页 · 开源排版','headerOdd':'书页 · 开源排版'},
+        d={'layout':{'fontSet':'fandol','header':'书页 · 开源排版','headerEven':'书页 · 开源排版','headerOdd':'书页 · 开源排版','footer':'{page}','footerEven':'{page}'},
            'journal':{'template':'cn-academic','name':'期刊名称','nameEn':'Journal Heading','shortTitle':'Running Title','year':'2026'},
            'blocks':[{'id':'p','type':'paragraph','text':'Body'}]}
         r=render_pdf(d);text=PdfReader(BytesIO(r['pdf'])).pages[0].extract_text()
         self.assertIn('Journal Heading',text)
+        self.assertNotIn('1',text)
         self.assertEqual(r['compileMessages'],[])
+        d['layout']['footer']='Proof {page}'
+        custom=render_pdf(d)
+        self.assertIn('Proof 1',PdfReader(BytesIO(custom['pdf'])).pages[0].extract_text())
 
     def test_note_only_revisions_block_until_explicitly_accepted(self):
         source=package('<w:p><w:r><w:t>Body</w:t><w:footnoteReference w:id="1"/></w:r></w:p>',{
