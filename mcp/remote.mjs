@@ -26,7 +26,7 @@ export function remoteServer({url,token,fetchImpl=fetch,timeoutMs=360000}){
   if(method==='tools/list'){readOnlyTools.clear();for(const tool of data.result.tools||[])if(tool.annotations?.readOnlyHint)readOnlyTools.add(tool.name);}
   return data.result;
  }
- const server=new Server({name:'shuye-online',version:'0.6.0'},{capabilities:{tools:{}}});
+ const server=new Server({name:'shuye-online',version:'0.7.0'},{capabilities:{tools:{}}});
  server.setRequestHandler(ListToolsRequestSchema,()=>rpc('tools/list',{}));
  server.setRequestHandler(CallToolRequestSchema,async request=>{
   try{return await rpc('tools/call',request.params);}

@@ -18,3 +18,5 @@ ICC conversion uses the unchanged JavaScript and WebAssembly runtime from `@kitt
 PNG decoding uses `@pdf-lib/upng@1.0.1` (MIT). JPEG encoding/decoding uses `jpeg-js@0.4.4` (BSD-3-Clause; decoder derived from PDF.js under Apache-2.0), https://github.com/jpeg-js/jpeg-js . `vendor/jpeg-cmyk/decoder.mjs` is adapted from its decoder: CommonJS/export wrappers removed and a bounded `decodeCmyk` entry added to preserve CMYK samples before RGB conversion. Original copyright notice is preserved. Full licenses: `vendor/jpeg-cmyk/LICENSE-BSD` and `LICENSE-APACHE`.
 
 Additional color test fixture provenance and reproduction instructions are in `tests/fixtures/README.md`. The bundled synthetic CMYK ICC is an original test fixture, not a print production profile.
+
+整期 Word 写入使用 python-docx 1.2.0（MIT），来源 https://github.com/python-openxml/python-docx 。服务端使用自行安装的 LibreOffice Writer 和 Python UNO 生成 PDF，不捆绑其二进制。整期流程按用户授权整合 InkQ 的选稿、目录回算和原生 Word 交付方式；Word 渲染临时副本采用其字面数学字符兼容思路，书页源工程及交付 Word 不改写原始 OMML。未复制 InkQ 的账号、额度账本或其他客户数据。

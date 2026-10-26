@@ -20,7 +20,14 @@ def main():
                               'blocks': [{'id': 'probe', 'type': 'paragraph', 'text': '期刊运行时检查'}]})
         if result['report']['geometry']['status'] != 'COMPLETE' or result['report']['compileMessages']:
             raise ValueError('JOURNAL_RUNTIME_PROBE_FAILED')
-        print(json.dumps({'engine': result['report']['renderer'], 'python': sys.version.split()[0]}))
+        issue={'enabled':False,'engine':'LibreOffice Writer','editableWord':True,'measuredContents':True}
+        try:
+            import docx,shutil,subprocess,os
+            if not shutil.which('libreoffice'):raise ValueError('LibreOffice not installed')
+            subprocess.run([os.environ.get('SHUYE_UNO_PYTHON','/usr/bin/python3'),'-c','import uno'],check=True,capture_output=True,timeout=10)
+            issue['enabled']=True
+        except Exception as e:issue['reason']='WORD_RUNTIME_UNAVAILABLE: '+str(e)[:300]
+        print(json.dumps({'engine': result['report']['renderer'], 'python': sys.version.split()[0],'issue':issue}))
     elif request['method'] == 'import':
         data = base64.b64decode(request['base64'], validate=True)
         result = import_docx(data,revision_policy=request.get('revisionPolicy','require-clean'))
@@ -28,6 +35,9 @@ def main():
         if errors:
             raise ValueError('DOCX_IMPORT_UNSUPPORTED: ' + '; '.join(d['message'] for d in errors))
         print(json.dumps(result, ensure_ascii=False))
+    elif request['method'] == 'render_issue':
+        from issue_export import render_issue
+        print(json.dumps(render_issue(request), ensure_ascii=False))
     elif request['method'] == 'render':
         folder = Path(request['directory'])
         document = request['document']

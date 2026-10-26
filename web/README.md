@@ -1,6 +1,6 @@
 # 书页 · 在线出版工作台
 
-独立开源的中文图书排版网站。产品方向参照方正飞翔印刷版 9.0-1794，**尚未达到飞翔完整功能对等**。Web 0.5.0 包含已验收的自由版面、母版、跨页表格与注释、ICC/PDF 输出和有限 PDML 保留式编辑。按用户要求发布已完成功能，尚未完成项继续明确列出；详见 [发布说明](docs/release-0.5.0.md) 和 [逐项验收](docs/native-rich-pdfx-acceptance.md)。
+独立开源的中文图书排版网站。产品方向参照方正飞翔印刷版 9.0-1794，**尚未达到飞翔完整功能对等**。Web 0.7.0 包含已验收的自由版面、母版、跨页表格与注释、ICC/PDF 输出和有限 PDML 保留式编辑。按用户要求发布已完成功能，尚未完成项继续明确列出；详见 [发布说明](docs/release-0.5.0.md) 和 [逐项验收](docs/native-rich-pdfx-acceptance.md)。
 
 ## 自有服务器
 
@@ -14,9 +14,13 @@
 
 期刊工作流：导入 Word → “期刊模板”设置刊名、卷期、日期与字体 → 右侧指定中英文首面角色、图表锚点和题注 → 保存 → “全文期刊 PDF”。浏览器纸面是结构编辑预览；首面、分页、公式换行和锚点验收以服务端全文 PDF 为准。PDF 与报告绑定源修订，刷新后可“取回期刊校样”；文稿变化后拒绝交付旧校样。下载成功不代表可发印。配置、接口及限制见 [全文期刊生产链](docs/journal-production.md)。0.6.0 增加旧 DOC、MathType、矢量与组合图片兼容、明确的接受修订策略，以及期刊自动排版计划；发布与实稿测试见 [0.6.0 验收](../docs/release-0.6.0.md)。
 
+## 整期与 Word
+
+项目库进入“整期编排与 Word 导出”，加入已应用期刊模板的文章，调整顺序、开本和正文起始页，保存方案并生成。导出包含原生可编辑文字、表格、公式及脚注；目录以这份整期 Word 渲染出的 PDF 为准。历史方案恢复保存为新修订；“取回上次任务”可读取 agent 创建的任务。详见 [使用、MCP 与边界](docs/issue-composition.md)。
+
 ## Agent / MCP
 
-当前工作区 `POST /mcp` 提供 85 个工具，与编辑器共享用户隔离的云端工程。Sites 使用发布生成的个人插件，自托管使用 Bearer MCP。`list_projects` → `get_project` → `apply_changes`，修改必须携带 `expectedRevision`，可先使用 `dryRun:true`。所有操作按稳定组件 ID 定位，无 computer-use 依赖。新增期刊工具先调用 `get_journal_capabilities`，只有 `enabled:true` 才能进行原生导入和全文 PDF 编译；Workers 部署不支持本机 TeX。
+当前工作区 `POST /mcp` 提供 91 个工具，与编辑器共享用户隔离的云端工程。Sites 使用发布生成的个人插件，自托管使用 Bearer MCP。`list_projects` → `get_project` → `apply_changes`，修改必须携带 `expectedRevision`，可先使用 `dryRun:true`。所有操作按稳定组件 ID 定位，无 computer-use 依赖。新增期刊工具先调用 `get_journal_capabilities`，只有 `enabled:true` 才能进行原生导入和全文 PDF 编译；Workers 部署不支持本机 TeX。
 
 模型 v4 在保留 v3 `composition` 的同时，新增首面角色、带来源摘要的行内/表内公式、脚注标记、图表锚点及不可抹去的导入报告。`get_journal_proof_page` 返回实际 PDF 的对象与文字坐标，AI 可据此定位和修改源组件，再按新修订输出校样。它不等同于视觉或数学语义验收。
 

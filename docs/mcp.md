@@ -1,8 +1,8 @@
 # 用 MCP 让 agent 编排图书
 
-## 在线期刊排版（0.6.0）
+## 在线期刊排版（0.7.0）
 
-在线服务端提供 85 个工具，包括 DOC/DOCX、OMML/MathType 导入、排版方案、
+在线服务端提供 91 个工具，包括 DOC/DOCX、OMML/MathType 导入、排版方案、
 章节、图表、脚注、真实 PDF 校样与逐页坐标检查。它与下面的旧版离线 42 工具
 服务是两种后端；旧 ChatGPT Sites 连接也不会自动变成 inkq.online 上的服务。
 
@@ -28,6 +28,8 @@
    取得页码、对象 ID、文字和坐标，修改有问题的组件后重新输出。
 6. `download_journal_pdf` 下载并核对 SHA-256；过期校样默认拒绝。浏览器编辑器
    会同步 agent 保存的修订，版本历史可恢复。
+
+整期自动化新增 `list_issues`、`save_issue`、`get_issue`、`start_issue_proof`、`get_issue_proof`、`download_issue_artifact`。先核对 `get_journal_capabilities.issue.enabled`，再按修订绑定选稿、生成并分块下载；完整参数见 [整期 MCP 调用](../web/docs/issue-composition.md)。
 
 这是排版和校样自动化，不是无人审校的发印批准。正文/公式语义、图中标注、
 稿件残留模板文字、卷期信息、印厂 PDF/X 要求仍须逐项确认；报告不会把未检查项

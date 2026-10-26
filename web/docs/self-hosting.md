@@ -51,13 +51,19 @@ location ^~ /shuye/ {
 
 登录页使用本站密码。项目库的“Agent 与 MCP → 账号与 MCP 令牌设置”可修改密码、创建及撤销令牌。密码变更会使浏览器会话失效；MCP 令牌可单独撤销。会话有效期七天，使用 HttpOnly、SameSite=Strict 及 HTTPS Secure Cookie。密码登录有失败次数限制。
 
-Agent 使用 `https://your-domain.example/shuye/mcp`，请求头为 `Authorization: Bearer <令牌>`。本分支提供 83 个 MCP 工具；其中全文期刊能力须额外启用运行时，不能从工具数量推断已可编译。令牌只在创建时显示一次，数据库只存摘要。不要将令牌放进 URL、Git 仓库或浏览器前端代码。服务拒绝伪造身份头、跨源请求；浏览器写请求必须携带同源 Origin。
+Agent 使用 `https://your-domain.example/shuye/mcp`，请求头为 `Authorization: Bearer <令牌>`。本分支提供 91 个 MCP 工具；其中全文期刊能力须额外启用运行时，不能从工具数量推断已可编译。令牌只在创建时显示一次，数据库只存摘要。不要将令牌放进 URL、Git 仓库或浏览器前端代码。服务拒绝伪造身份头、跨源请求；浏览器写请求必须携带同源 Origin。
 
 ## 可选的全文期刊引擎
 
 含复杂公式的 DOCX 导入、首面模板、段落锚点和全文 PDF 使用可选 Python/XeLaTeX 引擎。安装和 `journal` 配置见 [全文期刊生产链](journal-production.md)。未配置时编辑器保留，相关能力返回不可用；Workers 环境不启用本机 TeX。
 
 启用后，完整备份还须包含数据目录下的 `journal-proofs/`：源工程快照、PDF、编译证据与报告按源修订绑定。不要把它暴露为静态网站或只备份 PDF。依赖和证据需要额外磁盘空间；上线前重新测量容量并保留旧版本回滚。
+
+## 整期 Word 运行时
+
+0.7.0 整期输出需要 `journal-engine/requirements.txt` 中的 python-docx 1.2.0，以及 LibreOffice Writer、`python3-uno`、FreeSerif 和 Noto Serif/Sans CJK SC 字体。UNO Python 默认为 `/usr/bin/python3`，可用 `journal.env.SHUYE_UNO_PYTHON` 指定。`get_journal_capabilities.issue.enabled` 检查依赖是否可用；实际输出仍以任务状态及报告为准。
+
+七篇含大图稿件实测须将 Shuye 服务 `MemoryMax` 至少设为 `2G`；为系统和其他服务留足余量。仍只运行一个期刊任务，整期超时至少 900 秒。整期方案、20 次方案历史与交付物都在私有 `journal-proofs/` 内，备份时一并保留。禁止将此目录直接暴露为静态下载。源快照总量限制 28 MiB；下载每块最大 2 MiB。
 
 ## 数据、备份与更新
 

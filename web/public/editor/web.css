@@ -2,3 +2,4 @@
 @media print{.back-library{display:none!important}}
 
 @media screen{.toolbar button{flex-shrink:0;white-space:nowrap}}
+@media screen{.file-actions>select{width:auto;max-width:100%;font-size:11px}}
