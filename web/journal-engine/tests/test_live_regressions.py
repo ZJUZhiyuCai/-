@@ -76,10 +76,14 @@ class ActualPdfRegressions(unittest.TestCase):
         original=deepcopy(d);r=render_pdf(d);self.assertEqual(r['compileMessages'],[]);self.assertEqual(d,original)
         self.assertIn('e',r['objectPositions'])
 
-    def test_missing_cjk_is_still_blocked_with_page_and_source_identity(self):
-        d=document([{'id':'ref','type':'paragraph','text':'引用作者：啟。'}])
+    def test_missing_glyph_is_still_blocked_with_page_and_source_identity(self):
+        # The optional Noto fallback correctly renders 啟 on Linux. Use a
+        # supplementary private-use glyph absent from the fixture fonts so
+        # this negative test also runs when that fallback is installed.
+        unavailable='\U000f0000'
+        d=document([{'id':'ref','type':'paragraph','text':'引用作者：'+unavailable+'。'}])
         r=render_proof(d)['report'];missing=next(x for x in r['quality']['diagnostics'] if x['code']=='TEX_MISSING_GLYPH')
-        self.assertEqual(missing['character'],'啟')
+        self.assertEqual(missing['character'],unavailable)
         self.assertEqual(missing['sourceLocations'][0]['objectId'],'ref')
         self.assertEqual(missing['sourceLocations'][0]['pages'],[1,1])
         self.assertEqual(r['quality']['status'],'BLOCKED');self.assertFalse(r['quality']['productionReady'])
