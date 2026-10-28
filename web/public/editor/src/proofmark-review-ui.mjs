@@ -5,6 +5,13 @@ export function setupProofmarkReview({getDoc}){
  const images=new Map();
  const el=(tag,text,className)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e;};
  const button=(label,fn)=>{const b=el('button',label);b.type='button';b.onclick=fn;return b;};
+ const confirmReplacement=()=>new Promise(resolve=>{
+  const prompt=el('dialog');prompt.setAttribute('aria-label','替换复核草稿');
+  prompt.append(el('p','当前复核修改尚未导出。替换后将丢失这些修改。'),
+   button('保留当前草稿',()=>prompt.close()),button('确认替换',()=>prompt.close('replace')));
+  prompt.addEventListener('close',()=>{const accepted=prompt.returnValue==='replace';prompt.remove();resolve(accepted);},{once:true});
+  document.body.append(prompt);prompt.showModal();
+ });
  const releaseImages=()=>{for(const image of images.values())URL.revokeObjectURL(image.url);images.clear();};
  window.addEventListener('beforeunload',event=>{if(dirty){event.preventDefault();event.returnValue='';}});
  const open=()=>{
@@ -26,7 +33,7 @@ export function setupProofmarkReview({getDoc}){
   packetInput.onchange=()=>run(async()=>{
    const file=packetInput.files?.[0];if(!file)return;if(file.size>LIMITS.packetBytes)throw Error('识别结果不得超过 2 MiB');
    const next=await createReviewSession(await file.text(),getDoc());
-   if(dirty&&!window.confirm('当前复核修改尚未导出。替换后将丢失这些修改，确定导入新的识别结果吗？')){packetInput.value='';return;}
+   if(dirty&&!await confirmReplacement()){packetInput.value='';return;}
    releaseImages();session=next;selected=0;dirty=true;changeVersion++;draw();
    message.textContent=`已导入 ${session.items.length} 条待核批注。导入文件中的已审状态和源稿绑定声明均需重新核实。`;
   });
