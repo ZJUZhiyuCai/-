@@ -43,3 +43,15 @@ test('figure notes stay with captions; prose references are not missing figures'
  const plan=journalPlan(doc),result=applyOperations(doc,plan.operations).document;
  assert.deepEqual(result.blocks[1].captionIds,['note','cap','en']);assert.ok(!plan.diagnostics.some(d=>d.code==='FIGURE_ASSET_UNASSIGNED'));
 });
+
+test('figure anchors distinguish spaced body references from unbound captions',()=>{
+ for(const kind of ['image','table']){
+  const asset={id:'asset',type:kind,captionIds:['caption'],anchor:{targetId:'body',position:'after',maxPageDistance:1},...(kind==='image'?{src:'data:image/png;base64,AAAA'}:{rows:[['']],cellImages:[{row:0,col:0,imageId:'image'}]})};
+  const blocks=[{id:'body',type:'paragraph',text:'图 1 展示合成数据。'},asset,...(kind==='table'?[{id:'image',type:'image',src:'data:image/png;base64,AAAA'}]:[]),{id:'caption',type:'paragraph',text:'图 1 合成示意图'}];
+  const doc=checkDocument({format:'open-typesetter',version:4,blocks});
+  const missing=d=>journalPlan(d).diagnostics.filter(d=>d.code==='FIGURE_ASSET_UNASSIGNED').map(d=>d.blockId);
+  const before=structuredClone(doc);assert.deepEqual(missing(doc),[]);assert.deepEqual(doc,before);
+  const unrelated=structuredClone(doc);unrelated.blocks[0].text='图 2 未提供的图件';assert.deepEqual(missing(unrelated),['body']);
+  const ambiguous=structuredClone(doc);delete ambiguous.blocks[1].anchor;assert.deepEqual(missing(ambiguous),['body']);
+ }
+});

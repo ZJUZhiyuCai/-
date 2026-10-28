@@ -19,6 +19,8 @@ from editable_docx import Writer,export_article,field,font,NS
 from word_render import render
 from proof import text_geometry
 from omml_source import validated_source
+from figure_assets import missing_figures
+
 
 def sha(data):return hashlib.sha256(data).hexdigest()
 def title(article,entry):
@@ -53,15 +55,6 @@ def word_contents(path,values):
     parts['word/document.xml']=ET.tostring(root,xml_declaration=True,encoding='UTF-8')
     with zipfile.ZipFile(path,'w',zipfile.ZIP_DEFLATED) as z:
         for name,data in parts.items():z.writestr(name,data)
-
-def missing_figures(document):
-    import re
-    owners={c for b in document['blocks'] if b['type']=='image' or b['type']=='table' and b.get('cellImages') for c in b.get('captionIds',[])}
-    errors=[];blocks=document['blocks']
-    for i,b in enumerate(blocks):
-        label=re.match(r'^图\s*(\d+)(.*)',b.get('text','').strip());following=re.match(r'^Fig\.?\s*(\d+)\b',blocks[i+1].get('text','').strip(),re.I) if i+1<len(blocks) else None
-        if b['type'] in ('paragraph','heading') and label and (re.match(r'^(?:\s|[.:：])',label[2]) or following and following[1]==label[1]) and b['id'] not in owners:errors.append({'code':'FIGURE_ASSET_UNASSIGNED','severity':'error','blockId':b['id']})
-    return errors
 
 def verify_contents(contents,articles):
     compact=re.sub(r'\s+','',contents);cursor=0

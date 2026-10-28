@@ -88,7 +88,18 @@ export function journalPlan(doc,{width=210,height=285,minDpi=300,roles={},journa
   }
   if(Object.keys(patch).length)operations.push({op:'update_block',blockId:b.id,patch});
  }
- for(const b of blocks)if(b.type==='paragraph'&&figureTitle(b)&&!owned.has(b.id))diagnostics.push({severity:'warning',code:'FIGURE_ASSET_UNASSIGNED',blockId:b.id,message:'图题尚未关联图件；补充原图或指定 captionIds 后才能通过校样检查。'});
+ // A matching caption and explicit figure anchor establish a body reference.
+ // Keep ambiguous text blocked; a different figure number is not evidence.
+ const plannedCaptions=new Map(operations.filter(o=>o.op==='update_block'&&o.patch.captionIds).map(o=>[o.blockId,o.patch.captionIds]));
+ const byId=new Map(blocks.map(b=>[b.id,b])),figureReferences=new Set();
+ for(const asset of blocks){
+  if(asset.type!=='image'&&!(asset.type==='table'&&asset.cellImages?.length))continue;
+  const target=byId.get(asset.anchor?.targetId),number=text(target).match(/^图\s*(\d+)/)?.[1];
+  if(!number||!['paragraph','heading'].includes(target?.type))continue;
+  const captions=plannedCaptions.get(asset.id)||asset.captionIds||[];
+  if(captions.some(id=>id!==target.id&&['paragraph','heading'].includes(byId.get(id)?.type)&&text(byId.get(id)).match(/^图\s*(\d+)/)?.[1]===number))figureReferences.add(target.id);
+ }
+ for(const b of blocks)if(b.type==='paragraph'&&figureTitle(b)&&!owned.has(b.id)&&!figureReferences.has(b.id))diagnostics.push({severity:'warning',code:'FIGURE_ASSET_UNASSIGNED',blockId:b.id,message:'图题尚未关联图件；补充原图或指定 captionIds 后才能通过校样检查。'});
  for(const role of ['title-zh','authors-zh','affiliation-zh','abstract-zh','keywords-zh','title-en','authors-en','affiliation-en','abstract-en','keywords-en'])if(![...assigned.values()].includes(role))diagnostics.push({severity:'error',code:'ROLE_UNRESOLVED',role,message:'请通过 roles 指定首面字段：'+role});
  return {operations,diagnostics,roles:Object.fromEntries(assigned),sourceContentChanged:false,publicationApproved:false,workflow:['apply_changes(dryRun=true)','apply_changes','start_journal_proof','get_journal_proof','get_journal_proof_page','download_journal_pdf']};
 }

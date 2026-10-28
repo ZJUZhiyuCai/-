@@ -8,6 +8,7 @@ import hashlib
 import json
 import base64
 from journal import final_positions,relation_report
+from figure_assets import missing_figures
 
 
 def text_geometry(pdf_bytes, max_characters=2_000_000):
@@ -102,27 +103,10 @@ def inspect_output(output, document=None, compilation=None):
         diagnostics.extend({'code':'JOURNAL_FIELD_MISSING','severity':'error','message':'首面缺少字段：'+role} for role in required if not any(b.get('role')==role and str(b.get('text','')).strip() for b in document.get('blocks',[])))
         diagnostics.extend({'code':'JOURNAL_METADATA_REVIEW','severity':'warning','message':'出版字段待编辑确认：'+key} for key in ('name','nameEn','volume','issue','year','date','dateEn') if not str(document['journal'].get(key,'')).strip())
         import re
-        caption_owners={c for b in document.get('blocks',[]) if b.get('type')=='image' or (b.get('type')=='table' and b.get('cellImages')) for c in b.get('captionIds',[])}
+        diagnostics.extend(dict(d,message='图题未关联图件；请补充原图或显式设置 captionIds，不能把有图题无图的稿件作为完整校样。') for d in missing_figures(document))
         blocks=document.get('blocks',[])
-        by_id={b.get('id'):b for b in blocks}
-        callouts={}
-        for figure in blocks:
-            if figure.get('type')!='image' and not (figure.get('type')=='table' and figure.get('cellImages')):continue
-            anchor=figure.get('anchor',{}).get('targetId')
-            for caption_id in figure.get('captionIds',[]):
-                caption=by_id.get(caption_id,{})
-                number=re.match(r'^图\s*(\d+)(?!\d)',caption.get('text','').strip())
-                if anchor in by_id and number:callouts.setdefault(anchor,set()).add(number[1])
-        for index,b in enumerate(blocks):
-            label=re.match(r'^图\s*(\d+)(.*)',b.get('text','').strip())
-            following=re.match(r'^Fig\.?\s*(\d+)\b',blocks[index+1].get('text','').strip(),re.I) if index+1<len(blocks) else None
-            is_caption=label and (re.match(r'^(?:\s|[.:：])',label[2]) or (following and following[1]==label[1]))
-            # An explicitly anchored mention of the same numbered figure is
-            # body text, even when it begins "图 1 ...". A different number
-            # or an absent caption binding must still trigger the gate.
-            if label and label[1] in callouts.get(b.get('id'),set()):is_caption=False
-            if b.get('type') in ('paragraph','heading') and is_caption and b.get('id') not in caption_owners:
-                diagnostics.append({'code':'FIGURE_ASSET_UNASSIGNED','severity':'error','message':'图题未关联图件；请补充原图或显式设置 captionIds，不能把有图题无图的稿件作为完整校样。','blockId':b.get('id')})
+        for b in blocks:
+
             if b.get('role')=='classification' and re.search(r'文章编号\s*[:：]\s*$',b.get('text','')):
                 diagnostics.append({'code':'JOURNAL_METADATA_REVIEW','severity':'warning','message':'原稿文章编号为空，需编辑补全；系统未编造编号。','blockId':b['id']})
     for warning in report['layoutWarnings']:
