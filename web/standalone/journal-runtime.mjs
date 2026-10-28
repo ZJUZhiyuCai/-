@@ -5,6 +5,7 @@ import {mkdir,readFile,writeFile,rename,readdir,chmod} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {documentFingerprint} from '../public/editor/src/project-sync.mjs';
+import {assertJournalFonts} from '../public/editor/src/journal-fonts.mjs';
 import {createIssueStore} from './issue-store.mjs';
 
 const sha=value=>createHash('sha256').update(value).digest('hex');
@@ -50,7 +51,9 @@ export async function createJournalRuntime({directory,python='python3',engineDir
   capabilities,
   issues:createIssueStore(root),
   async importDocx(base64,revisionPolicy='require-clean'){ready();return track(worker({method:'import',base64,revisionPolicy}));},
+  async inspectDocx(base64,revisionPolicy='require-clean'){ready();return track(worker({method:'inspect',base64,revisionPolicy}));},
   start(owner,record,kind='article'){
+   for(const document of kind==='issue'?record.document.articles.map(a=>a.document):[record.document])assertJournalFonts(document,capabilities.environment?.fonts);
    if(kind==='issue'&&capabilities.issue?.enabled===false)throw Error(capabilities.issue.reason||'WORD_RUNTIME_UNAVAILABLE');
    // Reserve before any filesystem await: simultaneous requests cannot both start.
    ready();let resolveStart,rejectStart;

@@ -20,7 +20,9 @@
 
 ## Agent / MCP
 
-当前工作区 `POST /mcp` 提供 91 个工具，与编辑器共享用户隔离的云端工程。Sites 使用发布生成的个人插件，自托管使用 Bearer MCP。`list_projects` → `get_project` → `apply_changes`，修改必须携带 `expectedRevision`，可先使用 `dryRun:true`。所有操作按稳定组件 ID 定位，无 computer-use 依赖。新增期刊工具先调用 `get_journal_capabilities`，只有 `enabled:true` 才能进行原生导入和全文 PDF 编译；Workers 部署不支持本机 TeX。
+当前工作区 `POST /mcp` 提供 92 个工具，与编辑器共享用户隔离的云端工程。Sites 使用发布生成的个人插件，自托管使用 Bearer MCP。`list_projects` → `get_project` → `apply_changes`，修改必须携带 `expectedRevision`，可先使用 `dryRun:true`。所有操作按稳定组件 ID 定位，无 computer-use 依赖。新增期刊工具先调用 `get_journal_capabilities`，只有 `enabled:true` 才能进行原生导入和全文 PDF 编译；Workers 部署不支持本机 TeX。
+
+`inspect_journal_docx` 可在创建项目之前检查原稿的修订、公式和图像。125 MP 单帧 TIFF、MTEF/EMF 来源校验与修订策略的整合边界见 [导入链验证](docs/journal-import-integration.md)。
 
 模型 v4 在保留 v3 `composition` 的同时，新增首面角色、带来源摘要的行内/表内公式、脚注标记、图表锚点及不可抹去的导入报告。`get_journal_proof_page` 返回实际 PDF 的对象与文字坐标，AI 可据此定位和修改源组件，再按新修订输出校样。它不等同于视觉或数学语义验收。
 

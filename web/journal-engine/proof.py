@@ -6,6 +6,7 @@ An incomplete check never becomes a production approval.
 from io import BytesIO
 import hashlib
 import json
+import base64
 from journal import final_positions,relation_report
 
 
@@ -55,6 +56,14 @@ def inspect_output(output, document=None, compilation=None):
     report['geometry']=text_geometry(output['pdf'])
     report['layoutWarnings']=compilation.get('warnings',[])
     report['compileMessages']=compilation.get('compileMessages',[])
+    report['compileDiagnostics']=compilation.get('compileDiagnostics',[])
+    objects=report.get('semanticLayout',{}).get('objects',{})
+    for item in report['compileDiagnostics']:
+        for location in item.get('sourceLocations',[]):
+            bounds=objects.get(location.get('objectId'),{})
+            if bounds.get('start') and bounds.get('end'):
+                location['pages']=[bounds['start']['page'],bounds['end']['page']]
+        item['candidateLocations']=[{'objectId':ident,**objects[ident]} for ident in item.get('candidateObjectIds',[]) if ident in objects]
     report['discardedLayoutTrials']=compilation.get('discardedLayoutTrials',[])
     report['renderer']={k:compilation[k] for k in ('engine','engineVersion','fontSet') if k in compilation}
     if document:
@@ -63,10 +72,31 @@ def inspect_output(output, document=None, compilation=None):
     diagnostics=[dict(d,sourceSha256=r['sourceSha256']) for r in document.get('importReports',[]) for d in r['diagnostics']]
     diagnostics.extend(report['geometry']['outside'])
     diagnostics.extend(report.get('semanticLayout',{}).get('diagnostics',[]))
+    diagnostics.extend(report['compileDiagnostics'])
+    legacy={'formulas':0,'characters':0,'structures':0,'emptySourceObjects':0,'editedFormulas':0,'verifiedSources':0}
+    vectors=[]
     for b in document.get('blocks',[]):
         for m in ([b] if b.get('type')=='equation' else b.get('inlineMath',[])):
             if 'sourceOmml' in m and hashlib.sha256(m['sourceOmml'].encode('utf-8')).hexdigest()!=m.get('sourceSha256'):
                 diagnostics.append({'code':'OMML_SOURCE_HASH_MISMATCH','severity':'error','message':'原始公式来源摘要不一致','blockId':b.get('id'),'formulaId':m.get('id')})
+            if m.get('legacySource'):
+                from mtef import convert_ole
+                import re
+                source=m['legacySource'];legacy['formulas']+=1
+                try:
+                    raw=base64.b64decode(source['data'],validate=True);converted=convert_ole(raw)
+                    if hashlib.sha256(raw).hexdigest()!=source['sha256'] or any(source[k]!=converted[k] for k in ('mtefSha256','characters','structures','empty')) or source['originalTex']!=converted['text']:raise ValueError('MTEF 来源或转换记录不一致')
+                    if source.get('preview') and hashlib.sha256(base64.b64decode(source['preview']['data'],validate=True)).hexdigest()!=source['preview']['sha256']:raise ValueError('MTEF 原预览摘要不一致')
+                    legacy['verifiedSources']+=1;legacy['characters']+=converted['characters'];legacy['structures']+=converted['structures'];legacy['emptySourceObjects']+=int(converted['empty'])
+                    original=converted['text'];current=m.get('text','')
+                    number=re.search(r'(?:\\ )+\(([0-9]+)\)\s*$',original)
+                    if current!=original and not (number and m.get('equationNumber')==number[1] and current==original[:number.start()]):legacy['editedFormulas']+=1
+                except (ValueError,ImportError,OSError,KeyError) as error:
+                    diagnostics.append({'code':'MTEF_SOURCE_INVALID','severity':'error','message':str(error),'blockId':b.get('id'),'formulaId':m.get('id')})
+        if b.get('vectorSource'):
+            s=b['vectorSource'];vectors.append({'blockId':b['id'],'sourceAsset':s['sourceAsset'],'sourceSha256':s['sha256'],'pdfSha256':s['pdfSha256'],'sourceTextCharacters':len(s['text']),'compatibilityGlyphChanges':len(s['normalizations']),'outputKind':'vector PDF'})
+    report['legacyMathCoverage']=legacy;report['vectorAssets']=vectors
+    if legacy['editedFormulas']:diagnostics.append({'code':'MTEF_EDITED','severity':'warning','message':str(legacy['editedFormulas'])+' 处公式在原生转换后有内容编辑，须核对原稿。'})
     if document.get('journal'):
         required=['title-zh','authors-zh','affiliation-zh','abstract-zh','keywords-zh','title-en','authors-en','affiliation-en','abstract-en','keywords-en']
         diagnostics.extend({'code':'JOURNAL_FIELD_MISSING','severity':'error','message':'首面缺少字段：'+role} for role in required if not any(b.get('role')==role and str(b.get('text','')).strip() for b in document.get('blocks',[])))
@@ -74,15 +104,30 @@ def inspect_output(output, document=None, compilation=None):
         import re
         caption_owners={c for b in document.get('blocks',[]) if b.get('type')=='image' or (b.get('type')=='table' and b.get('cellImages')) for c in b.get('captionIds',[])}
         blocks=document.get('blocks',[])
+        by_id={b.get('id'):b for b in blocks}
+        callouts={}
+        for figure in blocks:
+            if figure.get('type')!='image' and not (figure.get('type')=='table' and figure.get('cellImages')):continue
+            anchor=figure.get('anchor',{}).get('targetId')
+            for caption_id in figure.get('captionIds',[]):
+                caption=by_id.get(caption_id,{})
+                number=re.match(r'^图\s*(\d+)(?!\d)',caption.get('text','').strip())
+                if anchor in by_id and number:callouts.setdefault(anchor,set()).add(number[1])
         for index,b in enumerate(blocks):
             label=re.match(r'^图\s*(\d+)(.*)',b.get('text','').strip())
             following=re.match(r'^Fig\.?\s*(\d+)\b',blocks[index+1].get('text','').strip(),re.I) if index+1<len(blocks) else None
             is_caption=label and (re.match(r'^(?:\s|[.:：])',label[2]) or (following and following[1]==label[1]))
+            # An explicitly anchored mention of the same numbered figure is
+            # body text, even when it begins "图 1 ...". A different number
+            # or an absent caption binding must still trigger the gate.
+            if label and label[1] in callouts.get(b.get('id'),set()):is_caption=False
             if b.get('type') in ('paragraph','heading') and is_caption and b.get('id') not in caption_owners:
                 diagnostics.append({'code':'FIGURE_ASSET_UNASSIGNED','severity':'error','message':'图题未关联图件；请补充原图或显式设置 captionIds，不能把有图题无图的稿件作为完整校样。','blockId':b.get('id')})
             if b.get('role')=='classification' and re.search(r'文章编号\s*[:：]\s*$',b.get('text','')):
                 diagnostics.append({'code':'JOURNAL_METADATA_REVIEW','severity':'warning','message':'原稿文章编号为空，需编辑补全；系统未编造编号。','blockId':b['id']})
     for warning in report['layoutWarnings']:
+        if report['compileDiagnostics'] and any(s in warning for s in ('缺字','字体形状替代','超出版心')):
+            continue
         if any(s in warning for s in ('缺字','字体形状替代','超出版心','超过一页','高于版心','缺少脚注')):
             diagnostics.append({'code':'TEX_LAYOUT_ERROR','severity':'error','message':warning})
     for font in report.get('fonts',[]):
