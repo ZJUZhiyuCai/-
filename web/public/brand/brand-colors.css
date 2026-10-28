@@ -1,0 +1,19 @@
+/* 书页标志配色：只作用于引用 shuye-mark.svg 的 <use>，不改其他主题色。 */
+:root {
+  --shuye-ink: #1e6a48;    /* 松墨：浅底（纸面 #f6f4ef、白底） */
+  --shuye-sprout: #7ccb98; /* 新叶：深底（#1b1b1b / #2c2c2c） */
+}
+
+/* 深色工具栏与登录页：.brand-home、.wb-brand、.auth-brand */
+use[href*="shuye-mark.svg"] {
+  color: var(--shuye-sprout);
+}
+
+/* 纸面封面印记 */
+.cover-imprint use[href*="shuye-mark.svg"] {
+  color: var(--shuye-ink);
+}
+
+/* 若登录页实际为浅底，启用这一条：
+.auth-brand use[href*="shuye-mark.svg"] { color: var(--shuye-ink); }
+*/
