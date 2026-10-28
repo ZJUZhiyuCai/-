@@ -294,7 +294,10 @@ def build_tex(doc,assets_dir,math_widths=None):
     # Fandol lacks some traditional Chinese characters. Prefer installed open
     # fonts as fallbacks; never replace the source character with a lookalike.
     pre+=r'\IfFontExistsTF{Noto Serif CJK SC}{\xeCJKsetup{AutoFallBack=true}\setCJKfallbackfamilyfont{\CJKrmdefault}{Noto Serif CJK SC}\setCJKfallbackfamilyfont{\CJKsfdefault}{Noto Sans CJK SC}}{}'+'\n'
-    pre+=r'\IfFontExistsTF{FreeSerif}{\newfontfamily\ShuyeGreekFont{FreeSerif}\newcommand{\ShuyeGreek}[1]{{\ShuyeGreekFont #1}}}{\newcommand{\ShuyeGreek}[1]{#1}}'+'\n'
+    # FreeSerif is part of the Linux runtime. macOS/Windows may instead have
+    # Times New Roman: use its real upright Greek glyphs before falling back
+    # to the selected text face (whose missing glyphs remain a hard error).
+    pre+=r'\IfFontExistsTF{FreeSerif}{\newfontfamily\ShuyeGreekFont{FreeSerif}\newcommand{\ShuyeGreek}[1]{{\ShuyeGreekFont #1}}}{\IfFontExistsTF{Times New Roman}{\newfontfamily\ShuyeGreekFont{Times New Roman}\newcommand{\ShuyeGreek}[1]{{\ShuyeGreekFont #1}}}{\newcommand{\ShuyeGreek}[1]{#1}}}'+'\n'
     if journal:
         math_font=journal.get('mathFont','tex-default')
         if math_font not in ('tex-default','stix-two'):raise ValueError('数学字体方案无效。')
@@ -328,6 +331,7 @@ def build_tex(doc,assets_dir,math_widths=None):
             overrides+=r'\fancyhead{}\fancyhead[LE]{'+escape(layout.get('headerEven',layout.get('header','')))+r'}\fancyhead[RO]{'+escape(layout.get('headerOdd',layout.get('header','')))+'}'
         # The normalized book footer is also a placeholder. Journals already
         # carry their folio in the running head; do not duplicate it below.
+
         if any(key in layout and layout[key]!='{page}' for key in ('footer','footerEven')):
             overrides+=r'\fancyfoot{}\fancyfoot[LE]{'+footer(layout.get('footerEven',layout.get('footer','')))+r'}\fancyfoot[RO]{'+footer(layout.get('footer',''))+'}'
         pre+=overrides+'\n'

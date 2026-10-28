@@ -82,10 +82,8 @@ class Writer:
         if page_start is not None:section._sectPr.append(element('w:pgNumType',start=page_start))
 
     def formula(self,p,model):
-        source=model.get('sourceOmml')
-        if not source or hashlib.sha256(source.encode()).hexdigest()!=model.get('sourceSha256'):raise ValueError('EDITABLE_OMML_SOURCE_REQUIRED: '+model.get('id',''))
-        root=ET.fromstring(source.encode(),ET.XMLParser(resolve_entities=False,no_network=True))
-        if root.tag not in ('{'+M+'}oMath','{'+M+'}oMathPara'):raise ValueError('INVALID_OMML_ROOT')
+        from omml_source import validated_source
+        root=validated_source(model)
         if root.tag=='{'+M+'}oMathPara':
             for child in root:
                 if child.tag=='{'+M+'}oMath':p._p.append(deepcopy(child))

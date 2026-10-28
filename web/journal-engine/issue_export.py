@@ -18,6 +18,7 @@ from docx.enum.text import WD_TAB_ALIGNMENT,WD_TAB_LEADER
 from editable_docx import Writer,export_article,field,font,NS
 from word_render import render
 from proof import text_geometry
+from omml_source import validated_source
 
 def sha(data):return hashlib.sha256(data).hexdigest()
 def title(article,entry):
@@ -105,7 +106,7 @@ def verify_docx(path,records):
         for r in records:
             for b in r['document']['blocks']:
                 for m in ([b] if b['type']=='equation' else b.get('inlineMath',[])):
-                    source=ET.fromstring(m['sourceOmml'].encode());expected.extend(tree(e) for e in ([source] if source.tag.endswith('}oMath') else source.findall('m:oMath',NS)))
+                    source=validated_source(m);expected.extend(tree(e) for e in ([source] if source.tag.endswith('}oMath') else source.findall('m:oMath',NS)))
         remaining=list(actual)
         for e in expected:
             if e not in remaining:raise ValueError('WORD_FORMULA_SOURCE_MISMATCH')
