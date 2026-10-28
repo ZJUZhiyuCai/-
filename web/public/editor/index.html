@@ -5,6 +5,7 @@
     <link rel="stylesheet" href="./composition.css" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>书页 · 在线排版工作台</title>
+    <link rel="stylesheet" href="workbench.css" />
     <link rel="stylesheet" href="style.css" /><link rel="stylesheet" href="vendor/katex/katex.min.css" />
     <link rel="stylesheet" href="flow-layout.css" /><link rel="stylesheet" href="table-editor.css" /><link rel="stylesheet" href="workspace-tools.css" />
     <link rel="stylesheet" href="proofmark-review.css" />
@@ -41,8 +42,9 @@
         ><label
           >缩放
           <select id="zoom">
+            <option value="fit" selected>适合页面</option>
             <option value="0.6">60%</option>
-            <option value="0.8" selected>80%</option>
+            <option value="0.8">80%</option>
             <option value="1">100%</option>
             <option value="1.2">120%</option>
           </select></label
@@ -237,7 +239,7 @@
     </main>
     <footer>
       <span id="stats"></span><span id="status" role="status">就绪</span
-      ><span>云端工作台 · 0.6 · MCP</span>
+      ><span>书页 · 0.7.0</span>
     </footer>
     <input
       id="fileInput"

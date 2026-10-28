@@ -2,10 +2,10 @@
 // JSON objects are unordered; schema validation may reorder their properties.
 export const documentFingerprint=value=>JSON.stringify(value,(_key,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v);
 export class ProjectConnection {
-  constructor({api,getDoc,replaceDoc}){Object.assign(this,{api,getDoc,replaceDoc,projectId:null,revision:0,base:'',busy:false,writing:false,epoch:0});}
+  constructor({api,getDoc,replaceDoc,onChange=()=>{}}){Object.assign(this,{api,getDoc,replaceDoc,onChange,projectId:null,revision:0,base:'',busy:false,writing:false,epoch:0});}
   get dirty(){return this.projectId!==null&&documentFingerprint(this.getDoc())!==this.base;}
   async replaceSnapshot(document){this.applying=true;try{return await this.replaceDoc(document);}finally{this.applying=false;}}
-  disconnect(){this.epoch++;this.projectId=null;this.base='';}
+  disconnect(){this.epoch++;this.projectId=null;this.base='';this.onChange();}
   async open(projectId){
     if(this.writing)throw Error('SAVE_IN_PROGRESS');
     const epoch=++this.epoch,before=documentFingerprint(this.getDoc()),r=await this.api('get_project',{projectId});
@@ -13,7 +13,7 @@ export class ProjectConnection {
     if(documentFingerprint(this.getDoc())!==before)throw Error('LOCAL_CHANGED_DURING_OPEN');
     if(await this.replaceSnapshot(r.document)===false)throw Error('DOCUMENT_REJECTED');
     if(epoch!==this.epoch)return false;
-    this.projectId=projectId;this.revision=r.revision;this.base=documentFingerprint(r.document);return true;
+    this.projectId=projectId;this.revision=r.revision;this.base=documentFingerprint(r.document);this.onChange();return true;
   }
   async create(projectId){
     if(this.writing)throw Error('SAVE_IN_PROGRESS');
@@ -27,7 +27,7 @@ export class ProjectConnection {
         this.projectId=projectId;this.revision=r.revision;this.base=documentFingerprint(r.document||document);
       }
       return r;
-    }finally{this.writing=false;}
+    }finally{this.writing=false;this.onChange();}
   }
   async save(){
     if(!this.projectId)throw Error('NOT_CONNECTED');if(this.writing)throw Error('SAVE_IN_PROGRESS');
@@ -35,7 +35,7 @@ export class ProjectConnection {
     // Invalidate reads already in flight as well as blocking new polls.
     // A pre-save response can arrive after this write has completed.
     const epoch=++this.epoch,document=structuredClone(this.getDoc());
-    try{const r=await this.api('replace_project',{projectId:this.projectId,expectedRevision:this.revision,document});if(epoch===this.epoch){this.revision=r.revision;this.base=documentFingerprint(r.document||document);}return r;}finally{this.writing=false;}
+    try{const r=await this.api('replace_project',{projectId:this.projectId,expectedRevision:this.revision,document});if(epoch===this.epoch){this.revision=r.revision;this.base=documentFingerprint(r.document||document);}return r;}finally{this.writing=false;this.onChange();}
   }
   async restore(revision){
     if(!this.projectId)throw Error('NOT_CONNECTED');if(this.writing)throw Error('SAVE_IN_PROGRESS');
@@ -47,7 +47,7 @@ export class ProjectConnection {
         this.revision=r.revision;this.base=documentFingerprint(r.document);
       }
       return r;
-    }finally{this.writing=false;}
+    }finally{this.writing=false;this.onChange();}
   }
-  async poll(){if(!this.projectId||this.busy||this.writing||this.dirty)return false;this.busy=true;const epoch=this.epoch;try{const r=await this.api('get_project',{projectId:this.projectId});if(epoch!==this.epoch||this.writing||this.dirty||r.revision===this.revision)return false;if(await this.replaceSnapshot(r.document)===false)throw Error('DOCUMENT_REJECTED');if(epoch!==this.epoch)return false;this.revision=r.revision;this.base=documentFingerprint(r.document);return true;}finally{this.busy=false;}}
+  async poll(){if(!this.projectId||this.busy||this.writing||this.dirty)return false;this.busy=true;const epoch=this.epoch;try{const r=await this.api('get_project',{projectId:this.projectId});if(epoch!==this.epoch||this.writing||this.dirty||r.revision===this.revision)return false;if(await this.replaceSnapshot(r.document)===false)throw Error('DOCUMENT_REJECTED');if(epoch!==this.epoch)return false;this.revision=r.revision;this.base=documentFingerprint(r.document);this.onChange();return true;}finally{this.busy=false;}}
 }

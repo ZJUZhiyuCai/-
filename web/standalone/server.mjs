@@ -1,4 +1,5 @@
 import {createJournalRuntime} from './journal-runtime.mjs';
+import {createLayoutAssistant} from './layout-assistant.mjs';
 import {createServer} from 'node:http';
 import {readFile,stat} from 'node:fs/promises';
 import {resolve,sep,extname} from 'node:path';
@@ -9,7 +10,7 @@ import {openStorage} from './storage.mjs';
 import {hash,secret,passwordHash,verify,identity} from './auth.mjs';
 const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.woff2':'font/woff2','.woff':'font/woff','.ttf':'font/ttf','.wasm':'application/wasm','.json':'application/json'};
-export async function startServer({directory,publicDirectory,origin,basePath='/shuye',port=8789,bootstrapPassword,journal,host='127.0.0.1'}={}){
+export async function startServer({directory,publicDirectory,origin,basePath='/shuye',port=8789,bootstrapPassword,journal,assistant,host='127.0.0.1'}={}){
  if(!/^\/[a-zA-Z0-9_-]+$/.test(basePath))throw Error('INVALID_BASE_PATH');
  const site=new URL(origin);if(!['http:','https:'].includes(site.protocol)||site.pathname!=='/')throw Error('INVALID_ORIGIN');
  const store=await openStorage(directory),sql=store.sql,root=resolve(publicDirectory),secure=site.protocol==='https:';
@@ -18,6 +19,7 @@ export async function startServer({directory,publicDirectory,origin,basePath='/s
   sql.prepare('INSERT INTO accounts VALUES (?,?)').run('admin',await passwordHash(bootstrapPassword));
  }
  if(journal)store.JOURNAL_RUNTIME=await createJournalRuntime({engineDirectory:fileURLToPath(new URL(typeof SHUYE_BUNDLED_JOURNAL_PATH==='string'?SHUYE_BUNDLED_JOURNAL_PATH:'../journal-engine/',import.meta.url)),...journal,directory:resolve(directory,'journal-proofs')});
+ if(assistant)store.LAYOUT_ASSISTANT=await createLayoutAssistant({...assistant,directory:resolve(directory,'layout-plans')});
  const attempts=new Map();let activeApi=0;
  const cookie=(token,age=604800)=>`shuye_session=${token}; Path=${basePath}/; HttpOnly; SameSite=Strict; Max-Age=${age}${secure?'; Secure':''}`;
  function page(title,content){return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} · 书页</title><link rel="stylesheet" href="${basePath}/dashboard.css"></head><body><main class="auth-card"><a href="${basePath}/">书页 · 在线出版工作台</a><h1>${title}</h1>${content}</main></body></html>`;}
@@ -83,7 +85,7 @@ export async function startServer({directory,publicDirectory,origin,basePath='/s
  });
  server.requestTimeout=120000;server.headersTimeout=15000;
  await new Promise((ok,fail)=>{server.once('error',fail);server.listen(port,host,ok)});
- return {server,store,close:async()=>{await store.JOURNAL_RUNTIME?.close();await new Promise(r=>server.close(r));store.close();}};
+ return {server,store,close:async()=>{await store.LAYOUT_ASSISTANT?.close();await store.JOURNAL_RUNTIME?.close();await new Promise(r=>server.close(r));store.close();}};
 }
 if(process.argv[1]&&realpathSync(process.argv[1])===realpathSync(fileURLToPath(import.meta.url))){
  const config=JSON.parse(await readFile(process.env.SHUYE_CONFIG||'/etc/shuye/config.json','utf8'));

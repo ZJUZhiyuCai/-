@@ -20,9 +20,10 @@
 
 ## Agent / MCP
 
-当前工作区 `POST /mcp` 提供 92 个工具，与编辑器共享用户隔离的云端工程。Sites 使用发布生成的个人插件，自托管使用 Bearer MCP。`list_projects` → `get_project` → `apply_changes`，修改必须携带 `expectedRevision`，可先使用 `dryRun:true`。所有操作按稳定组件 ID 定位，无 computer-use 依赖。新增期刊工具先调用 `get_journal_capabilities`，只有 `enabled:true` 才能进行原生导入和全文 PDF 编译；Workers 部署不支持本机 TeX。
+当前工作区 `POST /mcp` 提供 98 个工具，与编辑器共享用户隔离的云端工程。Sites 使用发布生成的个人插件，自托管使用 Bearer MCP。`list_projects` → `get_project` → `apply_changes`，修改必须携带 `expectedRevision`，可先使用 `dryRun:true`。所有操作按稳定组件 ID 定位，无 computer-use 依赖。新增期刊工具先调用 `get_journal_capabilities`，只有 `enabled:true` 才能进行原生导入和全文 PDF 编译；Workers 部署不支持本机 TeX。
 
 `inspect_journal_docx` 可在创建项目之前检查原稿的修订、公式和图像。125 MP 单帧 TIFF、MTEF/EMF 来源校验与修订策略的整合边界见 [导入链验证](docs/journal-import-integration.md)。
+
 
 模型 v4 在保留 v3 `composition` 的同时，新增首面角色、带来源摘要的行内/表内公式、脚注标记、图表锚点及不可抹去的导入报告。`get_journal_proof_page` 返回实际 PDF 的对象与文字坐标，AI 可据此定位和修改源组件，再按新修订输出校样。它不等同于视觉或数学语义验收。
 
@@ -59,3 +60,7 @@ MIT。仅包含独立源代码与声明的第三方依赖，不包含方正程�
 本轮使用用户提供的飞翔 9.0.0.1794 安装包做静态研究。`open_founder_pdml` / `edit_founder_pdml` 提供保留原文的 PDML 编辑：SHA-256 防冲突，文本按原有字符边界等长修改，可改对象几何和已有样式，未改动 XML 原样保留。“PDML 原文编辑”按钮支持打开、编辑和下载。显式页面原点、单页纸板纯文本子集可用 `import_founder_pdml_composition` / `export_founder_pdml_composition` 导入画布结构和写回；不支持的原生特性明确拒绝。真实捆绑模板通过原文保留修改与逆操作测试，但未在飞翔重新打开、重排和保存。
 
 `inspect_founder_ffx` / `scripts/inspect-founder-ffx.mjs` 对随包旧版 FFX 连续解析 18 条对象记录，遇未知类型/版本原位停止；没有 FFX 写出。下一类序列化进入受保护代码区，尚未恢复字段定义。用户没有飞翔账号，不再重复要求登录。详见 [当前验收](docs/native-rich-pdfx-acceptance.md)、[PDF/X 验证边界](docs/pdfx-validation-acceptance.md) 和 [研究依据](docs/fx9-research-acceptance.md)。
+
+## AI 排版工作台
+
+编辑器默认显示纸面、任务入口与排版助手，完整工具集中在“全部工具”（Ctrl/⌘K），窄窗口按需展开助手。助手默认关闭；独立服务器可配置本机 Ollama。模型只提出受限版式参数建议，经差异核对、显式应用、版本绑定校样及可撤销版本记录完成闭环。配置和真实模型验收见 [AI 排版工作台](docs/ai-workbench.md)。
