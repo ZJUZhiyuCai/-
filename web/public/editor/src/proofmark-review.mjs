@@ -92,6 +92,8 @@ export function decideItem(session,itemId,decision,reviewer){
  item.decision=decision;item.reviewer=decision==='pending'?'':reviewer;item.reviewedAt=decision==='pending'?null:new Date().toISOString();
 }
 export async function exportReview(session,document){
+ // Freeze the review at the user's click, before asynchronous hashing yields to edits.
+ session=structuredClone(session);
  const current=await sha256(canonical(document));
  const decisions=await Promise.all(session.items.map(async item=>({candidate_id:item.id,transcription:item.text,note:item.note,
   status:item.decision,reviewer:item.reviewer||null,reviewed_at:item.reviewedAt,

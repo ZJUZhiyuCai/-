@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createReviewSession,parseReviewPacket,sha256,verifyAsset,imageInfo,editItem,decideItem,exportReview,LIMITS} from '../public/editor/src/proofmark-review.mjs';
+import {createReviewSession,parseReviewPacket,sha256,verifyAsset,imageInfo,editItem,decideItem,exportReview,LIMITS,canonical} from '../public/editor/src/proofmark-review.mjs';
 const png=Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64'));
 const imageHash=await sha256(png);
 function packet(){return {schema_version:'proofmark-review/0.2',packet_kind:'review_draft',executable:false,batch_id:'synthetic',base_context:null,
@@ -49,4 +49,14 @@ test('export is a detached draft and reimport cannot inherit an approval',async(
  const report=await exportReview(s,{});assert.equal(report.decisions[0].status,'excluded');report.source_packet.batch_id='changed';assert.equal(s.source.batch_id,'synthetic');
  assert.throws(()=>parseReviewPacket(JSON.stringify(report)),/仅支持/);
  assert.equal(parseReviewPacket(input()).items[0].decision,'pending');
+});
+
+test('export snapshots decisions before hashing so concurrent edits cannot alter the draft',async()=>{
+ const s=await createReviewSession(input(),{});s.verifiedAssets.set('image',true);decideItem(s,'c1','checked','Editor');
+ const original=s.items[0].text,pending=exportReview(s,{});
+ editItem(s,'c1',{text:'typed while exporting',note:'new review'});s.verifiedAssets.clear();
+ const report=await pending;
+ assert.equal(report.decisions[0].transcription,original);assert.equal(report.decisions[0].status,'checked');
+ assert.equal(report.decisions[0].evidence_verified,true);assert.equal(s.items[0].decision,'pending');
+ assert.equal(report.decisions[0].item_sha256,await sha256(canonical({candidate:s.source.candidates[0],transcription:original,note:''})));
 });

@@ -2,7 +2,7 @@
 
 独立编写的可视化中文排版工具。产品方向已改为参照**方正飞翔印刷版 9.0-1794**；当前网页版为 **Web 0.7.0**，本地版仍为 0.3。**尚未达到飞翔完整功能对等，也不承诺原生文件或版面完全兼容。**
 
-网页版源代码在 [web/](web/)，提供云端工程、登录身份隔离、版本恢复、97 个 HTTP MCP 工具与浏览器内排版。0.5.0 增加自由图文框串接、母版与分节、跨框表格和长注续排、ICC 转换及受限 PDF/X-4 输出，并提供 PDML 保源编辑与 FFX 只读分析。参见 [0.5.0 发布说明](web/docs/release-0.5.0.md)、[网页使用与部署](web/README.md)、[原生格式与复杂排版验收](web/docs/native-rich-pdfx-acceptance.md) 和 [飞翔功能矩阵](web/docs/feixiang-matrix.md)。原生格式完整双向兼容及完整 PDF/X 合规认证尚未完成。仓库中的托管模板没有绑定维护者的 Site ID；自行部署时创建自己的站点并配置身份网关、D1 和 R2。
+网页版源代码在 [web/](web/)，提供云端工程、登录身份隔离、版本恢复、98 个 HTTP MCP 工具与浏览器内排版。0.5.0 增加自由图文框串接、母版与分节、跨框表格和长注续排、ICC 转换及受限 PDF/X-4 输出，并提供 PDML 保源编辑与 FFX 只读分析。参见 [0.5.0 发布说明](web/docs/release-0.5.0.md)、[网页使用与部署](web/README.md)、[原生格式与复杂排版验收](web/docs/native-rich-pdfx-acceptance.md) 和 [飞翔功能矩阵](web/docs/feixiang-matrix.md)。原生格式完整双向兼容及完整 PDF/X 合规认证尚未完成。仓库中的托管模板没有绑定维护者的 Site ID；自行部署时创建自己的站点并配置身份网关、D1 和 R2。
 
 维护者站点：[书页在线出版工作台](https://inkq.online/shuye/)（独立服务器、私有账号登录，无需 ChatGPT 登录）。[自托管部署与验收](web/docs/self-hosting.md)包含 Node、SQLite、本地存储、Nginx 和 MCP 令牌配置；原 Sites 站点保留，两边后续编辑不会自动同步。
 
@@ -10,7 +10,7 @@
 
 0.7.0 新增整期选稿排序、按实际 PDF 起页重算目录、连续页码、整期及逐篇可编辑 Word、交付包和六个 MCP 整期工具。浏览器入口为“整期编排与 Word 导出”。使用与限制见 [整期编排](web/docs/issue-composition.md)。
 
-原有本地版及独立 XeLaTeX 印刷后端仍可使用。下文的本机启动和 42 个 stdio MCP 工具属于本地版。
+原有本地版及独立 XeLaTeX 印刷后端仍可使用。下文的本机启动和 44 个 stdio MCP 工具属于本地版。
 
 ![书页编辑器：注音与合并表格](docs/editor-current.jpg)
 

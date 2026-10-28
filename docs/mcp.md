@@ -2,7 +2,7 @@
 
 ## 在线期刊排版（0.7.0）
 
-在线服务端提供 91 个工具，包括 DOC/DOCX、OMML/MathType 导入、排版方案、
+在线服务端提供 98 个工具，包括 DOC/DOCX、OMML/MathType 导入、排版方案、
 章节、图表、脚注、真实 PDF 校样与逐页坐标检查。它与下面的旧版离线 44 工具
 服务是两种后端；旧 ChatGPT Sites 连接也不会自动变成 inkq.online 上的服务。
 
