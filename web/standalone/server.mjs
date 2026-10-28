@@ -22,7 +22,8 @@ export async function startServer({directory,publicDirectory,origin,basePath='/s
  if(assistant)store.LAYOUT_ASSISTANT=await createLayoutAssistant({...assistant,directory:resolve(directory,'layout-plans')});
  const attempts=new Map();let activeApi=0;
  const cookie=(token,age=604800)=>`shuye_session=${token}; Path=${basePath}/; HttpOnly; SameSite=Strict; Max-Age=${age}${secure?'; Secure':''}`;
- function page(title,content){return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} · 书页</title><link rel="stylesheet" href="${basePath}/dashboard.css"></head><body><main class="auth-card"><a href="${basePath}/">书页 · 在线出版工作台</a><h1>${title}</h1>${content}</main></body></html>`;}
+ const brand=`<a class="auth-brand" href="${basePath}/" aria-label="书页 · 项目库"><svg viewBox="0 0 48 48" width="36" height="36" aria-hidden="true" focusable="false"><use href="${basePath}/brand/shuye-mark.svg#mark"/></svg><span>书页</span></a>`;
+ function page(title,content){return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} · 书页</title><link rel="icon" type="image/svg+xml" href="${basePath}/favicon.svg"><link rel="stylesheet" href="${basePath}/dashboard.css"></head><body><main class="auth-card">${brand}<h1>${title}</h1>${content}</main></body></html>`;}
  const form=(path,content,label)=>`<form method="post" action="${basePath}${path}">${content}<button class="primary">${label}</button></form>`;
  const input=(name,label,type='password')=>`<label>${label}<input name="${name}" type="${type}" required maxlength="256" autocomplete="${name==='newPassword'?'new-password':'current-password'}"></label>`;
  const server=createServer(async(req,res)=>{
@@ -72,7 +73,7 @@ export async function startServer({directory,publicDirectory,origin,basePath='/s
     try{const headers=new Headers({'content-type':'application/json','oai-authenticated-user-id':owner});if(req.headers.origin)headers.set('origin',req.headers.origin);const r=await handle(new Request(u,{method:'POST',headers,body:await body()}),store,path==='/mcp');send(r.status,Buffer.from(await r.arrayBuffer()),r.headers.get('content-type')||'application/json');}finally{activeApi--;}return;
    }
    if(req.method==='POST'){json(404,{error:'NOT_FOUND'});return;}
-   if(path==='/'||path==='/index.html'){send(200,page('我的出版项目',`<div id="root"></div><script src="${basePath}/config.js"></script><script type="module" src="${basePath}/dashboard.js"></script>`).replace('<main class="auth-card">','<main>').replace('<h1>我的出版项目</h1>','').replace(`<a href="${basePath}/">书页 · 在线出版工作台</a>`,''));return;}
+   if(path==='/'||path==='/index.html'){send(200,page('我的出版项目',`<div id="root"></div><script src="${basePath}/config.js"></script><script type="module" src="${basePath}/dashboard.js"></script>`).replace('<main class="auth-card">','<main>').replace('<h1>我的出版项目</h1>','').replace(brand,''));return;}
    const decoded=decodeURIComponent(path);if(decoded.includes('\0')||decoded.split('/').some(v=>v==='..'||v.startsWith('.'))||decoded.includes('\\')){json(404,{error:'NOT_FOUND'});return;}
    const target=resolve(root,'.'+decoded);if(!target.startsWith(root+sep)){json(404,{error:'NOT_FOUND'});return;}
    const info=await stat(target);if(!info.isFile())throw Object.assign(Error('not found'),{code:'ENOENT'});
