@@ -1,26 +1,172 @@
 "use client";
 import {sitePath} from '../public/editor/src/site-path.mjs';
-import {useState,useEffect} from 'react';
-import {BookOpen,Plus,Search,ArrowUpRight,Archive,ChevronRight,LayoutTemplate,Braces,FolderOpen,LoaderCircle} from 'lucide-react';
+import {useState,useEffect,useRef} from 'react';
+import type {CSSProperties} from 'react';
+import {Plus,Search,ArrowUpRight,Archive,LoaderCircle,RotateCcw,Braces,HelpCircle} from 'lucide-react';
+
 type Project={projectId:string,title:string,revision:number,updatedAt:string,blockCount:number,archived:boolean};
-async function api(tool:string,args:object={}){const r=await fetch(sitePath('/api/mcp-projects'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tool,arguments:args})});const data=await r.json();if(!r.ok)throw Error(data.error||'操作失败');return data;}
+type Tab='projects'|'archive'|'templates'|'agent'|'guide';
+const TABS:Tab[]=['projects','archive','templates','agent','guide'];
+async function api(tool:string,args:object={}){
+  const r=await fetch(sitePath('/api/mcp-projects'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tool,arguments:args})});
+  const data=await r.json();if(!r.ok)throw Error(data.error||'操作失败');return data;
+}
+
+// 模板缩样按真实毫米比例绘制；版式与 templates.mjs 一致（图书、A4 双栏、A5 竖排、空白）。
+type Tpl={id:string,name:string,w:number,h:number,cols:number,vertical?:boolean,sample:string};
+const TEMPLATES:Tpl[]=[
+  {id:'book',name:'通用图书',w:185,h:260,cols:1,sample:'文字的秩序'},
+  {id:'academic',name:'学术论文',w:210,h:297,cols:2,sample:'研究与发现'},
+  {id:'poetry',name:'竖排诗集',w:148,h:210,cols:1,vertical:true,sample:'山川与诗'},
+  {id:'blank',name:'空白文稿',w:185,h:260,cols:1,sample:''},
+];
+const FLOW:Record<string,(number|'h')[][]>={book:[[3,'h',4,3,'h',5,4,3,4]],academic:[[5,'h',6,4,'h',5,6],[4,6,'h',5,6,4]]};
+const POEM=[.62,.46,.7,.4];
+function Sheet({t,s,title,mini=false}:{t:Tpl,s:number,title:string,mini?:boolean}){
+  const px=(mm:number)=>Math.round(mm*s*10)/10;
+  const style={width:px(t.w),height:px(t.h),'--s':s} as CSSProperties;
+  const block={top:px(20),bottom:px(24),left:px(18),right:px(18)};
+  const cls='sheet'+(mini?' is-mini':'');
+  if(t.id==='blank')return <div className={cls} style={style} aria-hidden="true"><div className="sheet-block is-guides" style={block}/></div>;
+  if(t.vertical)return <div className={cls} style={style} aria-hidden="true"><div className="sheet-block is-vertical" style={block}><span className="sheet-title">{title}</span><div className="sheet-poem">{POEM.map((h,i)=><i key={i} style={{height:`${h*100}%`}}/>)}</div></div><i className="sheet-folio"/></div>;
+  return <div className={cls} style={style} aria-hidden="true"><div className="sheet-block" style={block}><span className="sheet-title">{title}</span><div className="sheet-cols">{(FLOW[t.id]||FLOW.book).map((col,i)=><div key={i}>{col.map((n,j)=>n==='h'?<i key={j} className="sheet-h"/>:<i key={j} className="sheet-p" style={{height:`calc(var(--pitch) * ${n})`}}/>)}</div>)}</div></div><i className="sheet-folio"/></div>;
+}
+
+function when(iso:string){
+  const d=new Date(iso);if(Number.isNaN(d.getTime()))return '';
+  const now=new Date(),clock=d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}),yesterday=new Date(now);yesterday.setDate(now.getDate()-1);
+  if(d.toDateString()===now.toDateString())return '今天 '+clock;
+  if(d.toDateString()===yesterday.toDateString())return '昨天 '+clock;
+  if(d.getFullYear()===now.getFullYear())return `${d.getMonth()+1}月${d.getDate()}日`;
+  return d.toLocaleDateString('zh-CN');
+}
+const titleSize=(t:string)=>t.length>28?' is-long':t.length>14?' is-mid':'';
+
 export default function Dashboard({user}:{user:string|null}){
-  const [projects,setProjects]=useState<Project[]>([]),[tab,setTab]=useState('projects'),[search,setSearch]=useState(''),[loading,setLoading]=useState(true),[error,setError]=useState(''),[creating,setCreating]=useState(false),[modal,setModal]=useState(false),[title,setTitle]=useState(''),[template,setTemplate]=useState('book');
-  async function load(){setLoading(true);try{if(user)setProjects((await api('list_projects')).projects);}catch(e:any){setError(e.message);}finally{setLoading(false);}}
+  const [projects,setProjects]=useState<Project[]>([]),[tab,setTabState]=useState<Tab>('projects'),[search,setSearch]=useState(''),[loading,setLoading]=useState(true),[error,setError]=useState(''),[creating,setCreating]=useState(false),[modal,setModal]=useState(false),[title,setTitle]=useState(''),[template,setTemplate]=useState('book'),[pending,setPending]=useState('');
+  async function load(quiet=false){if(!quiet)setLoading(true);try{if(user)setProjects((await api('list_projects')).projects);}catch(e:any){setError(e.message);}finally{setLoading(false);}}
   useEffect(()=>{load();},[]);
-  async function create(){if(!title.trim()){setError('请输入书名');return;}setCreating(true);setError('');try{const {makeTemplate}=await import('../public/editor/src/templates.mjs');const projectId='book-'+crypto.randomUUID();await api('create_project',{projectId,document:makeTemplate(template,title.trim())});location.href=sitePath('/editor/index.html?project=')+projectId;}catch(e:any){setError(e.message);setCreating(false);}}
-  async function archive(p:Project){try{await api('archive_project',{projectId:p.projectId,expectedRevision:p.revision,archived:!p.archived});await load();}catch(e:any){setError(e.message);}}
-  const visible=projects.filter(p=>p.archived===(tab==='archive')&&p.title.toLowerCase().includes(search.toLowerCase()));
-  return <div className="shell"><aside className="sidebar"><a className="wordmark" href={sitePath('/')}><span className="brand-icon"><BookOpen size={24}/></span><span>书页<small>在线出版工作台</small></span></a><div className="workspace-label">我的工作空间</div><a href={sitePath('/issue.html')} style={{display:'block',padding:'12px 16px'}}>整期编排与 Word 导出 →</a><nav>{[['projects','项目库',FolderOpen],['templates','排版模板',LayoutTemplate],['agent','Agent 与 MCP',Braces],['archive','已归档',Archive]].map(([key,label,Icon]:any)=><button key={key} onClick={()=>setTab(key)} className={tab===key?'active':''}><Icon size={18}/>{label}{key==='projects'&&<span>{projects.filter(p=>!p.archived).length}</span>}</button>)}</nav><div className="sidebar-bottom"><div className="online-dot"/>云端工程 · 版本保护<p>写作、排版与自动化<br/>在同一份文稿上完成。</p><button onClick={()=>setTab('guide')}>使用说明与功能范围 <ArrowUpRight size={15}/></button></div></aside>
-  <main className="main"><header className="globalbar"><span>工作空间 <ChevronRight size={14}/>{({projects:'项目库',templates:'排版模板',agent:'Agent 与 MCP',archive:'已归档',guide:'使用说明'} as any)[tab]}</span><div className="account"><span className="avatar">{user?'编':'访'}</span>{user||'访客'}{user?<a href={sitePath('/signout-with-chatgpt?return_to=/')} target="_top">退出</a>:<a href={sitePath('/signin-with-chatgpt?return_to=/')} target="_top">登录</a>}</div></header>
-  <div className="content">{error&&<div role="alert" className="error">{error}<button onClick={()=>setError('')}>关闭</button></div>}
-  {(tab==='projects'||tab==='archive')&&<><div className="page-heading"><div><p className="kicker">从文字，到成书</p><h1>{tab==='archive'?'已归档项目':'我的出版项目'}</h1><p>管理文稿、打磨版式，让每一页都有秩序。</p></div><button className="primary" onClick={()=>{if(!user)location.href=sitePath('/signin-with-chatgpt?return_to=/');else setModal(true);}}><Plus size={18}/>新建项目</button></div>
-  {tab==='projects'&&<section className="intro-strip"><div className="mini-book" aria-hidden="true"><span>书页</span><i>文字的秩序</i><b>SHUYE</b></div><div><span className="label">开始你的下一本书</span><h2>好内容，值得好版式。</h2><p>从图书、学术或竖排模板开始。章节、图表、注释与引用，统一编排。</p><button onClick={()=>setTab('templates')}>浏览排版模板 <ArrowUpRight size={16}/></button></div><div className="strip-note"><span>01 — 写作</span><span>02 — 编排</span><span>03 — 输出</span></div></section>}
-  <div className="list-toolbar"><h2>{tab==='archive'?'归档文稿':'全部项目'} <span>{visible.length}</span></h2><label className="search"><Search size={17}/><input aria-label="搜索项目" placeholder="搜索书名…" value={search} onChange={e=>setSearch(e.target.value)}/></label></div>
-  {loading?<div className="empty"><LoaderCircle className="spin"/>正在读取云端工程…</div>:visible.length?<div className="project-grid">{visible.map((p,i)=><article className="project-card" key={p.projectId}><a href={sitePath('/editor/index.html?project=')+p.projectId} className={'cover cover-'+i%4}><span className="cover-line">书页 / 出版工程</span><strong>{p.title}</strong><div className="cover-rule"/><small>{p.blockCount} 个组件</small><ArrowUpRight size={22}/></a><div className="project-info"><a href={sitePath('/editor/index.html?project=')+p.projectId}>{p.title}</a><p>修订 {p.revision} · {new Date(p.updatedAt).toLocaleDateString('zh-CN')}</p><button aria-label={(p.archived?'恢复 ':'归档 ')+p.title} onClick={()=>archive(p)}><Archive size={17}/></button></div></article>)}</div>:<div className="empty"><BookOpen size={30}/><h3>{search?'没有找到匹配项目':tab==='archive'?'还没有归档项目':'第一本书，从这里开始'}</h3><p>{user?'新建一个工程，或在编辑器中导入已有文稿。':'登录后即可跨设备保存工程；也可以先体验排版。'}</p><a className="text-link" href={sitePath('/editor/index.html')}>打开示例文稿 <ArrowUpRight size={15}/></a></div>}</>}
-  {tab==='templates'&&<><div className="page-heading"><div><p className="kicker">有结构的开始</p><h1>排版模板</h1><p>预设版心、字体与章节层级，所有参数均可修改。</p></div></div><div className="template-grid">{[['book','通用图书','185 × 260 mm · 单栏','文字的秩序'],['academic','学术论文','A4 · 双栏 · 注释与文献','研究与发现'],['poetry','竖排诗集','A5 · 竖排 · 疏朗行距','山川与诗']].map(([id,name,detail,cover],i)=><button className="template-card" key={id} onClick={()=>{setTemplate(id);setTitle(name);if(user)setModal(true);else location.href=sitePath('/signin-with-chatgpt?return_to=/');}}><div className={'template-cover t'+i}><span>{cover}</span><small>书页 / {name}</small></div><h2>{name}</h2><p>{detail}</p><span className="text-link">使用模板 <ArrowUpRight size={15}/></span></button>)}</div></>}
-  {tab==='agent'&&<><div className="page-heading"><div><p className="kicker">代码直达版面</p><h1>让 Agent 参与编排</h1><p>MCP 与可视化编辑器读写同一份云端工程。</p></div><Braces size={42}/></div><div className="guide-grid"><section className="guide-panel"><h2>连接与操作</h2><ol><li>在本网站创建并保存工程。</li><li>连接本网站的 MCP；独立部署时在账号设置创建访问令牌，以 Authorization: Bearer 方式使用。</li><li>调用 list_projects 和 get_project 获取工程及修订号。</li><li>使用 apply_changes 原子修改；先 dryRun 预检再提交。</li><li>编辑器空闲且无未保存修改时，会接收云端更新。</li></ol><code className="endpoint">POST {sitePath('/mcp')}</code>{globalThis.__SHUYE_BASE__&&<a href={sitePath('/account')}>账号与 MCP 令牌设置</a>}<p>页眉页脚、章节、文字、图表、公式、脚注、文献、批注及样式均有结构化操作。无需屏幕点击。</p></section><section className="code-panel"><span>示例 · 修改页眉与页码</span><pre>{JSON.stringify({name:'set_layout',arguments:{projectId:'你的工程ID',expectedRevision:1,patch:{header:'书名 · 第一章',footer:'第 {page} 页'},dryRun:true}},null,2)}</pre><p>修订号变化会拒绝旧写入，避免覆盖人工编辑。</p></section></div></>}
-  {tab==='guide'&&<><div className="page-heading"><div><h1>使用说明与功能范围</h1><p>书页是独立开源实现，正在向专业图书与期刊排版发展。</p></div></div><div className="guide-grid"><section className="guide-panel"><h2>完成一份文稿</h2><ol><li>新建模板项目，进入可视化工作台。</li><li>在纸面直接编辑，或选中组件后修改属性。</li><li>添加表格、公式、脚注、目录和索引。</li><li>点击“保存到云端”，或用 Ctrl+S。历史版本可恢复。</li><li>下载 JSON 备份；打印时选择“另存为 PDF”，关闭浏览器页眉页脚。</li></ol><p>单工程最大 20 MB。排版建议使用桌面浏览器。字体来自访问设备，跨设备分页可能不同。</p></section><section className="guide-panel"><h2>已实现与待完成</h2><p>支持流式排版、横竖排、分栏、结构化章节、图片绕排、合并表格、数学公式、注音、注释引用、云端版本与 MCP。</p><p>支持自由图文框串接、母版、跨页表格和长注、ICC 色彩转换、受限 PDF/X-4 输出与有限 PDML 编辑。完整飞翔原生双向兼容与完整 PDF/X 合规验证尚未完成。当前网页不能称为方正飞翔完整替代品。</p><a className="text-link" href="https://www.founderfx.cn/product/1012.jhtml" target="_blank" rel="noreferrer">功能参照：飞翔印刷版 9.0-1794 <ArrowUpRight size={15}/></a></section></div></>}
-  <footer className="dashboard-footer"><span>书页 · 独立开源排版</span><span>云端版本 0.7.0 · 每次保存，留有依据</span></footer></div></main>
-  {modal&&<div className="modal-backdrop" onClick={e=>{if(e.target===e.currentTarget&&!creating)setModal(false);}}><form role="dialog" aria-modal="true" aria-labelledby="createTitle" className="create-dialog" onSubmit={e=>{e.preventDefault();create();}}><h2 id="createTitle">新建出版项目</h2><p>为这本书取一个名字，之后可以随时修改。</p><label>项目名称<input autoFocus maxLength={120} value={title} onChange={e=>setTitle(e.target.value)} placeholder="例如：城市与阅读" required/></label><label>起始版式<select value={template} onChange={e=>setTemplate(e.target.value)}><option value="book">通用图书</option><option value="academic">学术论文</option><option value="poetry">竖排诗集</option><option value="blank">空白文稿</option></select></label>{error&&<p role="alert" className="error">{error}</p>}<div className="dialog-actions"><button type="button" disabled={creating} onClick={()=>setModal(false)}>取消</button><button className="primary" disabled={creating}>{creating?'正在创建…':'创建并开始排版'}<ArrowUpRight size={16}/></button></div></form></div>}</div>;
+  useEffect(()=>{const t=location.hash.slice(1) as Tab;if(TABS.includes(t))setTabState(t);},[]);
+  function setTab(t:Tab){setTabState(t);try{history.replaceState(null,'',t==='projects'?location.pathname+location.search:'#'+t);}catch{}}
+  const dialogRef=useRef<HTMLFormElement>(null),openerRef=useRef<HTMLElement|null>(null),creatingRef=useRef(false),searchRef=useRef<HTMLInputElement>(null);creatingRef.current=creating;
+  useEffect(()=>{
+    if(!modal)return;
+    const onKey=(e:KeyboardEvent)=>{
+      if(e.key==='Escape'&&!creatingRef.current){e.preventDefault();setModal(false);return;}
+      if(e.key!=='Tab')return;
+      const items=[...(dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled)')||[])];
+      if(!items.length)return;
+      if(e.shiftKey&&document.activeElement===items[0]){e.preventDefault();items[items.length-1].focus();}
+      else if(!e.shiftKey&&document.activeElement===items[items.length-1]){e.preventDefault();items[0].focus();}
+    };
+    document.addEventListener('keydown',onKey);return()=>{document.removeEventListener('keydown',onKey);openerRef.current?.focus();};
+  },[modal]);
+  // “/” 聚焦搜索，与多数桌面工具一致；输入框内不拦截。
+  useEffect(()=>{
+    const onKey=(e:KeyboardEvent)=>{
+      if(e.key!=='/'||modal||e.ctrlKey||e.metaKey||e.altKey||(tab!=='projects'&&tab!=='archive'))return;
+      if((e.target as Element|null)?.closest?.('input,textarea,select,[contenteditable]'))return;
+      e.preventDefault();searchRef.current?.focus();
+    };
+    document.addEventListener('keydown',onKey);return()=>document.removeEventListener('keydown',onKey);
+  },[modal,tab]);
+  function openModal(){openerRef.current=document.activeElement instanceof HTMLElement?document.activeElement:null;setError('');setModal(true);}
+  async function create(){if(!title.trim()){setError('请输入项目名称');return;}setCreating(true);setError('');try{const {makeTemplate}=await import('../public/editor/src/templates.mjs');const projectId='book-'+crypto.randomUUID();await api('create_project',{projectId,document:makeTemplate(template,title.trim())});location.href=sitePath('/editor/index.html?project=')+projectId;}catch(e:any){setError(e.message);setCreating(false);}}
+  async function archive(p:Project){if(pending)return;setPending(p.projectId);try{await api('archive_project',{projectId:p.projectId,expectedRevision:p.revision,archived:!p.archived});await load(true);}catch(e:any){setError(e.message);}finally{setPending('');}}
+  const signIn=()=>{location.href=sitePath('/signin-with-chatgpt?return_to=/');};
+  function newProject(){if(!user)signIn();else {setTitle('');setTemplate('book');openModal();}}
+  function startFrom(id:string){if(!user){signIn();return;}setTemplate(id);setTitle('');openModal();}
+
+  const active=projects.filter(p=>!p.archived),archived=projects.filter(p=>p.archived),q=search.trim().toLowerCase();
+  const visible=(tab==='archive'?archived:active).filter(p=>p.title.toLowerCase().includes(q)).sort((a,b)=>(Date.parse(b.updatedAt)||0)-(Date.parse(a.updatedAt)||0));
+  const isLibrary=tab==='projects'||tab==='archive',chosen=TEMPLATES.find(t=>t.id===template)||TEMPLATES[0];
+  const notice=error&&!modal&&<div role="alert" className="notice"><span>{error}</span><button type="button" onClick={()=>setError('')} aria-label="关闭提示">×</button></div>;
+
+  return <div className="shell">
+    <header className="appbar">
+      <a className="brand-home" href={sitePath('/')} aria-label="书页 · 项目库" title="书页"><svg viewBox="0 0 48 48" width="28" height="28" aria-hidden="true" focusable="false"><use href={sitePath('/brand/shuye-mark.svg#mark')}/></svg></a>
+      <nav className="workspaces" aria-label="工作区">
+        <button type="button" onClick={()=>setTab('projects')} aria-current={isLibrary?'page':undefined}>项目库</button>
+        <a href={sitePath('/issue.html')}>整期编排</a>
+        <button type="button" onClick={()=>setTab('templates')} aria-current={tab==='templates'?'page':undefined}>模板</button>
+      </nav>
+      <div className="appbar-end">
+        <button type="button" className="quiet" onClick={()=>setTab('agent')} aria-current={tab==='agent'?'page':undefined} title="Agent 与 MCP"><Braces size={15}/>MCP</button>
+        <button type="button" className="quiet" onClick={()=>setTab('guide')} aria-current={tab==='guide'?'page':undefined} title="使用说明"><HelpCircle size={15}/>说明</button>
+        <span className="bar-rule" aria-hidden="true"/>
+        <div className="account"><span className="avatar" aria-hidden="true">{user?user.slice(0,1).toUpperCase():'访'}</span><span>{user||'访客'}</span>{user?<a href={sitePath('/signout-with-chatgpt?return_to=/')} target="_top">退出</a>:<a href={sitePath('/signin-with-chatgpt?return_to=/')} target="_top">登录</a>}</div>
+      </div>
+    </header>
+
+    <main className="board">
+      {isLibrary&&<section className={'library'+(tab==='archive'?' is-archive-view':'')} aria-labelledby="libHeading">
+        <h1 id="libHeading" className="a11y-hidden">{tab==='archive'?'已归档项目':'项目库'}</h1>
+        <div className="lib-toolbar">
+          <div className="segmented" role="group" aria-label="项目范围">
+            <button type="button" aria-pressed={tab==='projects'} onClick={()=>setTab('projects')}>在用<b>{active.length}</b></button>
+            <button type="button" aria-pressed={tab==='archive'} onClick={()=>setTab('archive')}>归档<b>{archived.length}</b></button>
+          </div>
+          <label className="search"><Search size={15} aria-hidden="true"/><input ref={searchRef} type="search" aria-label="搜索项目" placeholder="搜索" value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>{if(e.key==='Escape'&&search){e.preventDefault();setSearch('');}}}/>{!search&&<kbd aria-hidden="true">/</kbd>}</label>
+          {tab==='projects'&&<button type="button" className="primary" onClick={newProject}><Plus size={15}/>新建项目</button>}
+        </div>
+        {notice}
+        {loading?<div className="shelf" aria-hidden="true">{[0,1,2,3,4].map(i=><div className="volume" key={i}><div className="volume-ghost"/><div className="volume-meta"><span className="ghost-line"/></div></div>)}</div>
+        :visible.length?<div className="shelf" role="list">{visible.map(p=><article className={'volume'+(p.archived?' is-archived':'')} role="listitem" key={p.projectId}>
+            <a className="volume-cover" href={sitePath('/editor/index.html?project=')+p.projectId} aria-label={'打开 '+p.title}>
+              <span className={'cover-title'+titleSize(p.title)}>{p.title}</span><i className="cover-rule" aria-hidden="true"/>
+              {/* 印记与应用栏同用 <use>：颜色由 CSS 决定，强制颜色模式下随系统文字色，不依赖 SVG 图像的默认黑色。 */}
+              <span className="cover-foot" aria-hidden="true"><svg className="cover-imprint" viewBox="0 0 48 48" width="16" height="16" focusable="false"><use href={sitePath('/brand/shuye-mark.svg#mark')}/></svg><span>r{p.revision}</span></span>
+            </a>
+            <div className="volume-meta">
+              <time dateTime={p.updatedAt} title={new Date(p.updatedAt).toLocaleString('zh-CN')}>{when(p.updatedAt)}</time>
+              <button type="button" className="volume-act" disabled={pending===p.projectId} aria-busy={pending===p.projectId||undefined} aria-label={(p.archived?'恢复 ':'归档 ')+p.title} title={p.archived?'恢复到在用':'归档'} onClick={()=>archive(p)}>{pending===p.projectId?<LoaderCircle className="spin" size={15}/>:p.archived?<RotateCcw size={15}/>:<Archive size={15}/>}</button>
+            </div>
+          </article>)}</div>
+        :search?<p className="shelf-empty">没有与“{search.trim()}”匹配的项目</p>
+        :tab==='archive'?<p className="shelf-empty">没有归档项目</p>
+        :<div className="shelf">{user
+          ?<div className="volume"><button type="button" className="volume-blank" onClick={newProject}><Plus size={22}/><span>新建项目</span></button></div>
+          :<div className="volume"><button type="button" className="volume-blank" onClick={signIn}><Plus size={22}/><span>登录后新建</span></button><div className="volume-meta"><a className="text-link" href={sitePath('/editor/index.html')}>打开示例文稿<ArrowUpRight size={13}/></a></div></div>}</div>}
+      </section>}
+
+      {tab==='templates'&&<section className="tpl-stage" aria-labelledby="tplHeading">
+        <h1 id="tplHeading" className="a11y-hidden">排版模板</h1>
+        {notice}
+        <div className="tpl-shelf">{TEMPLATES.map(t=><button type="button" className="tpl" key={t.id} onClick={()=>startFrom(t.id)} aria-label={`以${t.name}新建项目`}>
+          <Sheet t={t} s={1} title={t.sample}/>
+          <span className="tpl-caption"><strong>{t.name}</strong><small>{t.w} × {t.h}{t.cols>1?` · ${t.cols} 栏`:''}{t.vertical?' · 竖排':''}</small></span>
+        </button>)}</div>
+      </section>}
+
+      {tab==='agent'&&<article className="doc">
+        <h1>Agent 与 MCP</h1>
+        <section><h2>连接与操作</h2><div><ol><li>在本网站创建并保存工程。</li><li>连接本网站的 MCP；独立部署时在账号设置创建访问令牌，以 Authorization: Bearer 方式使用。</li><li>调用 list_projects 和 get_project 获取工程及修订号。</li><li>使用 apply_changes 原子修改；先 dryRun 预检再提交。</li><li>编辑器空闲且无未保存修改时，会接收云端更新。</li></ol><code className="endpoint">POST {sitePath('/mcp')}</code>{globalThis.__SHUYE_BASE__&&<a className="text-link" href={sitePath('/account')}>账号与 MCP 令牌设置<ArrowUpRight size={13}/></a>}</div></section>
+        <section><h2>示例 · 修改页眉与页码</h2><div><pre className="code">{JSON.stringify({name:'set_layout',arguments:{projectId:'你的工程ID',expectedRevision:1,patch:{header:'书名 · 第一章',footer:'第 {page} 页'},dryRun:true}},null,2)}</pre><p>修订号变化会拒绝旧写入，避免覆盖人工编辑。</p></div></section>
+        <section><h2>可操作范围</h2><div><p>页眉页脚、章节、文字、图表、公式、脚注、文献、批注及样式均有结构化操作。</p></div></section>
+      </article>}
+
+      {tab==='guide'&&<article className="doc">
+        <h1>使用说明与功能范围</h1>
+        <section><h2>完成一份文稿</h2><div><ol><li>新建模板项目，进入可视化工作台。</li><li>在纸面直接编辑，或选中组件后修改属性。</li><li>添加表格、公式、脚注、目录和索引。</li><li>保存到云端；历史版本可恢复。</li><li>下载 JSON 备份；打印时选择“另存为 PDF”，关闭浏览器页眉页脚。</li></ol></div></section>
+        <section><h2>限制</h2><div><p>单工程最大 20 MB。排版建议使用桌面浏览器。字体来自访问设备，跨设备分页可能不同。</p></div></section>
+        <section><h2>已实现与待完成</h2><div><p>支持流式排版、横竖排、分栏、结构化章节、图片绕排、合并表格、数学公式、注音、注释引用、云端版本与 MCP。</p><p>支持自由图文框串接、母版、跨页表格和长注、ICC 色彩转换、受限 PDF/X-4 输出与有限 PDML 编辑。完整飞翔原生双向兼容与完整 PDF/X 合规验证尚未完成。</p><a className="text-link" href="https://www.founderfx.cn/product/1012.jhtml" target="_blank" rel="noreferrer">功能参照：飞翔印刷版 9.0-1794<ArrowUpRight size={13}/></a></div></section>
+        <footer className="doc-colophon">书页 0.7.0</footer>
+      </article>}
+    </main>
+
+    {modal&&<div className="modal-backdrop" onClick={e=>{if(e.target===e.currentTarget&&!creating)setModal(false);}}>
+      <form ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="createTitle" className="create-dialog" onSubmit={e=>{e.preventDefault();create();}}>
+        <div className={'create-preview'+(title.trim()?'':' is-placeholder')}><Sheet t={chosen} s={1.08} title={title.trim()||'未命名'}/></div>
+        <div className="create-form">
+          <h2 id="createTitle">新建项目</h2>
+          <label className="title-field"><span className="a11y-hidden">项目名称</span><input autoFocus maxLength={120} value={title} onChange={e=>setTitle(e.target.value)} placeholder="书名或项目名称" required/></label>
+          <fieldset className="tpl-choices"><legend className="a11y-hidden">起始版式</legend>
+            {TEMPLATES.map(t=><label key={t.id} className={'tpl-choice'+(template===t.id?' is-on':'')}><input type="radio" name="template" value={t.id} checked={template===t.id} onChange={()=>setTemplate(t.id)}/><Sheet t={t} s={.2} title="" mini/><span>{t.name}</span></label>)}
+          </fieldset>
+          {error&&<p role="alert" className="form-error">{error}</p>}
+          <div className="dialog-actions"><button type="button" className="quiet" disabled={creating} onClick={()=>setModal(false)}>取消</button><button className="primary" disabled={creating} aria-busy={creating||undefined}>{creating?<><LoaderCircle className="spin" size={15}/>正在创建…</>:<>创建并打开<ArrowUpRight size={15}/></>}</button></div>
+        </div>
+      </form>
+    </div>}
+  </div>;
 }

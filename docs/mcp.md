@@ -2,8 +2,8 @@
 
 ## 在线期刊排版（0.7.0）
 
-在线服务端提供 91 个工具，包括 DOC/DOCX、OMML/MathType 导入、排版方案、
-章节、图表、脚注、真实 PDF 校样与逐页坐标检查。它与下面的旧版离线 42 工具
+在线服务端提供 98 个工具，包括 DOC/DOCX、OMML/MathType 导入、排版方案、
+章节、图表、脚注、真实 PDF 校样与逐页坐标检查。它与下面的旧版离线 44 工具
 服务是两种后端；旧 ChatGPT Sites 连接也不会自动变成 inkq.online 上的服务。
 
 在 [本站账号页](https://inkq.online/shuye/account) 创建可撤销 MCP 令牌，保存到
@@ -35,11 +35,12 @@
 稿件残留模板文字、卷期信息、印厂 PDF/X 要求仍须逐项确认；报告不会把未检查项
 自动标成通过。
 
-书页 0.3.0 提供 **42 个 MCP 工具、工程资源和工作流提示词**。agent 直接操作结构化模型，无需 Computer Use、截图或浏览器自动化；MCP 服务不需要先打开编辑器。模型调用由你的 agent 提供，书页不需要大模型 API Key。
+书页 0.3.0 提供 **44 个 MCP 工具、工程资源和工作流提示词**。agent 直接操作结构化模型，无需 Computer Use、截图或浏览器自动化；MCP 服务不需要先打开编辑器。模型调用由你的 agent 提供，书页不需要大模型 API Key。
+
 
 ## 安装和连接
 
-需要 Node.js 22+。DOCX、PDF 能力及编辑器共享工程另需 Python 3.10+。
+需要 Node.js 22.13+（或 24+）。DOCX、PDF 能力及编辑器共享工程另需 Python 3.10+。
 
 ```sh
 git clone https://github.com/yran96657-cmyk/-.git open-typesetter
@@ -74,6 +75,14 @@ node scripts/mcp-demo.mjs --workspace C:/books/shuye-workspace --pdf
 ```
 
 示例通过真实 MCP 创建工程，设置奇偶页眉页脚、主标题、章节，插入正文、表格、公式、目录、注释、文献与交叉引用，试运行后提交、校验并导出。输出包含工程 ID、revision 和产物路径；完整代码见 [mcp-demo.mjs](../scripts/mcp-demo.mjs)。
+
+## 实际 PDF 候选与反馈
+
+`apply_changes(dryRun=true)` 只做结构预览，返回 `visualPaginationChecked:false`。需要实际排版时调用 `render_candidate({projectId, expectedRevision, operations})`：候选只写校样产物，不修改工程或修订号。随后 `get_proof_page({proofId, page, offset:0, limit:50})` 读取文字框（pt、左上原点）、字体、来源修订号和过期状态。它不提供源块到版面对象的完整映射，也不能代替逐页视觉检查。
+
+核对后以同一 `expectedRevision` 和同一 `operations` 调用 `apply_changes`，再 `export_pdf`。插入块请自行提供稳定 ID；没有 ID 的插入会每次生成新 ID，候选和提交的身份哈希将不同。工程在编译期间变动时返回 `REVISION_CHANGED_DURING_RENDER`，必须重新读取。页范围/拼版后的最终 PDF 也会重新绑定 SHA-256 和几何。
+
+`validate_project.valid` / `structureValid` 仅表示模型合法；另看 `contentStatus`、`diagnostics` 和 `productionReady`。导入记录不会在保存、撤销、整工程替换时静默丢失；需要清理错误导入时，修好原稿并创建一个新工程。v3 行内公式由 `[[math:id]]` 和同块 `inlineMath: [{id,text}]` 绑定；整块更新可原子修改两者，单字符编辑不能切断标记，删表格行列也不能留下失联公式。
 
 ## 推荐工作流
 
@@ -117,7 +126,7 @@ node scripts/mcp-demo.mjs --workspace C:/books/shuye-workspace --pdf
 | 表格 | `table_set_cell`、`table_merge`、`table_split`、`table_resize` |
 | 样式定位 | `set_styles`、`apply_style`、`set_index`、`set_bookmarks` |
 | 导入 | `import_text`（TXT/FBD）、`import_docx`、`import_pro` |
-| 检查输出 | `validate_project`、`export_project`、`export_pdf`、`preflight_pdf` |
+| 检查输出 | `validate_project`、`export_project`、`export_pdf`、`preflight_pdf`、`render_candidate`、`get_proof_page` |
 
 单项修改工具也支持 `expectedRevision` 和 `dryRun`（撤销除外）。未知属性报错，不接受任意脚本或 shell 字符串。
 
@@ -155,3 +164,9 @@ node scripts/mcp-demo.mjs --workspace C:/books/shuye-workspace --pdf
 本地 stdio 适配器输入上限为 64 MiB（服务端请求仍限制 30 MiB、Word 文件 20 MiB）。自行使用 MCP SDK 编写客户端时，也应将 `StdioClientTransport` 的 `maxBufferSize` 设为 `64 * 1024 * 1024`，否则 SDK 默认的 10 MiB 会中断含大图的完整工程/PDF读取。一般 agent 使用 summary 和分页即可。
 
 `captionPosition` 只适用于 `table`；图片以 `captionIds` 指定图下题注。`set_text_block_type` 可在段落与标题之间转换并保留内容和 ID。
+
+
+## 期刊 v4
+
+`set_journal` 保存首面模板；图表的 `anchor`、`captionIds`、公式的 `equationNumber` 和段落 `role` 均通过现有事务修改。`get_proof_page` 增加当前页的 `objects` 与 `objectTotal`，其分页独立于文字行数；取全量时按两者较大值继续分页。`semanticLayout` 的点位为语义起止位置，不是墨迹框。字段、复现命令和边界见 [期刊 v4 实稿记录](journal-pilot-v4.md)。
+

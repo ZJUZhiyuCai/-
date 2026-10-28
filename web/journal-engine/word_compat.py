@@ -170,7 +170,7 @@ def normalize_fence_extensions(root):
                 if '\uf8f2' in (t.text or ''):count+=t.text.count('\uf8f2');t.text=t.text.replace('\uf8f2','')
     return count
 
-def compose_groups(root,read,rels):
+def compose_groups(root,read,rels,preserve_pictures=False):
     """Rasterize picture-only DrawingML groups at their original coordinates.
 
     Overlaps and XML paint order are preserved; text/shapes/rotation/cropping
@@ -201,6 +201,7 @@ def compose_groups(root,read,rels):
     for parent in list(root.iter()):
         for group in list(parent):
             if group.tag!='{http://schemas.microsoft.com/office/word/2010/wordprocessingGroup}wgp':continue
+            if preserve_pictures:continue
             pictures=[c for c in group if c.tag.endswith('}pic')]
             if len(pictures)<1 or any(c.tag.rsplit('}',1)[-1] not in ('cNvPr','cNvGrpSpPr','grpSpPr','pic') for c in group):raise ValueError('Unsupported non-picture drawing group')
             props=next((c for c in group if c.tag.endswith('}grpSpPr')),None)

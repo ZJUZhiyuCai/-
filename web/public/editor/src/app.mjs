@@ -20,11 +20,13 @@ import { setupRubyEditor } from './ruby.mjs';
 import {materializeReferences} from './references.mjs';
 import {setupCloud} from './cloud-ui.mjs';
 import {setupReview} from './review-ui.mjs';
+import {setupProofmarkReview} from './proofmark-review-ui.mjs';
 import {makeTemplate} from './templates.mjs';
 import {importDocx} from './docx-web.mjs';
 import {setupComposition} from './composition-ui.mjs';
 import {setupPrintExport} from './print-ui.mjs';
 import {setupNativeEditor} from './native-ui.mjs';
+import {setupWorkbench} from './workbench.mjs';
 const $ = (id) => document.getElementById(id),
   storageKey = "shuye-web-"+(new URLSearchParams(location.search).get("project")||"sample"),
   history = new History();
@@ -443,9 +445,16 @@ $("redo").onclick = () => {
     refresh();
   }
 };
+function fitPage() {
+  const canvas=document.querySelector('.canvas'),mm=96/25.4;
+  if($('zoom').value!=='fit')return;
+  const next=Math.max(.15,Math.min(1.2,(canvas.clientWidth-60)/(doc.layout.width*mm),(canvas.clientHeight-108)/(doc.layout.height*mm)));
+  if(Math.abs(next-zoom)<.001)return;
+  zoom=next;render();
+}
 $("zoom").onchange = () => {
-  zoom = Number($("zoom").value);
-  render();
+  if($('zoom').value==='fit')fitPage();
+  else {zoom=Number($('zoom').value);render();}
 };
 $("guides").onchange = () =>
   $("pages").classList.toggle("hide-guides", !$("guides").checked);
@@ -683,6 +692,7 @@ setupEditorTools({getDoc:()=>doc,getSelected:()=>selected,change,select:choose,s
 setupTableEditor({getDoc:()=>doc,getSelected:()=>selected,change,status});
 setupWorkspaceTools({getDoc:()=>doc,getSelected:()=>selected,change,select:choose,status,getSelectionRange:()=>selectionRange,replaceDoc:next=>change(()=>{doc=next;selected=doc.blocks[0]?.id;})});
 setupReview({getDoc:()=>doc,getSelected:()=>selected,change,status});
+setupProofmarkReview({getDoc:()=>doc});
 compositionUI=setupComposition({getDoc:()=>doc,change,refresh,status});
 setupPrintExport({getDoc:()=>doc,status});
 setupNativeEditor();
@@ -690,5 +700,6 @@ setupNativeEditor();
 setupRubyEditor({getDoc:()=>doc,getSelected:()=>selected,getSelectionRange:()=>selectionRange,change,status});
 document.fonts.addEventListener('loadingdone',()=>{clearTimeout(paginationTimer);paginationTimer=setTimeout(()=>render(),100);});
 void refresh();
-await setupCloud({getDoc:()=>doc,status,replaceDoc:next=>change(()=>{doc=next;selected=doc.blocks[0]?.id;})});
+const connection=await setupCloud({getDoc:()=>doc,status,replaceDoc:next=>change(()=>{doc=next;selected=doc.blocks[0]?.id;})});
+setupWorkbench({getDoc:()=>doc,connection,fit:fitPage});
 if (startupWarning) status(startupWarning, true);

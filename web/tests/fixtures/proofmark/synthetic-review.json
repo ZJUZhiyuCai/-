@@ -1,0 +1,103 @@
+{
+  "schema_version": "proofmark-review/0.2",
+  "packet_kind": "review_draft",
+  "executable": false,
+  "batch_id": "synthetic-proofmark-demo",
+  "round_id": null,
+  "parent_batch_id": null,
+  "created_date": "2026-10-26",
+  "method": "Synthetic integration fixture, not model output.",
+  "coverage": "representative_examples_not_exhaustive",
+  "base_context": null,
+  "assets": [
+    {
+      "id": "demo-photo",
+      "sha256": "8ccb3e258d9f477f83641bf8b52c67fcb07d5931536208bfb5ac32a8a2633f28",
+      "width_px": 760,
+      "height_px": 460,
+      "original_filename": "synthetic-proof.png",
+      "path": "synthetic-proof.png",
+      "limitations": [
+        "Synthetic fixture; not a recognition-quality benchmark."
+      ],
+      "page_segments": [
+        {
+          "id": "demo-page",
+          "bbox": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "note": "Synthetic page",
+          "printed_page_number": null
+        }
+      ]
+    }
+  ],
+  "candidates": [
+    {
+      "id": "DEMO-01",
+      "evidence": {
+        "asset_id": "demo-photo",
+        "page_segment_id": "demo-page",
+        "annotation_bbox": [
+          0.47,
+          0.25,
+          0.81,
+          0.38
+        ],
+        "geometry_method": "editor_marked",
+        "transcription": "italic variables",
+        "transcription_quality": "readable",
+        "observation": "Synthetic annotation beside a formula."
+      },
+      "target": {
+        "object_type": "math",
+        "region_bbox": [
+          0.05,
+          0.3,
+          0.47,
+          0.44
+        ],
+        "semantic_hint": "formula variables",
+        "match_status": "region_only",
+        "source_binding": null
+      },
+      "interpretation": {
+        "summary": "The note may request italic variables; human confirmation is required.",
+        "status": "inferred",
+        "alternatives": []
+      },
+      "action": {
+        "type": "unresolved",
+        "question": "Which variables need italic styling?"
+      },
+      "scope": "selected_target_only",
+      "unresolved": [
+        "No original manuscript binding."
+      ],
+      "invariants": [
+        "Do not change mathematical meaning."
+      ],
+      "acceptance_checks": [
+        "Compare with original photo."
+      ],
+      "relationships": {
+        "depends_on": [],
+        "supersedes": []
+      },
+      "review": {
+        "status": "pending",
+        "reviewer_id": null,
+        "reviewed_at": null,
+        "item_sha256": null,
+        "note": null
+      },
+      "provenance": {
+        "source": "synthetic_fixture",
+        "human_edited": true
+      }
+    }
+  ]
+}

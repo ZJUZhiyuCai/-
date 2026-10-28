@@ -1,4 +1,5 @@
 import {createJournalRuntime} from './journal-runtime.mjs';
+import {createLayoutAssistant} from './layout-assistant.mjs';
 import {createServer} from 'node:http';
 import {readFile,stat} from 'node:fs/promises';
 import {resolve,sep,extname} from 'node:path';
@@ -9,7 +10,7 @@ import {openStorage} from './storage.mjs';
 import {hash,secret,passwordHash,verify,identity} from './auth.mjs';
 const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.woff2':'font/woff2','.woff':'font/woff','.ttf':'font/ttf','.wasm':'application/wasm','.json':'application/json'};
-export async function startServer({directory,publicDirectory,origin,basePath='/shuye',port=8789,bootstrapPassword,journal,host='127.0.0.1'}={}){
+export async function startServer({directory,publicDirectory,origin,basePath='/shuye',port=8789,bootstrapPassword,journal,assistant,host='127.0.0.1'}={}){
  if(!/^\/[a-zA-Z0-9_-]+$/.test(basePath))throw Error('INVALID_BASE_PATH');
  const site=new URL(origin);if(!['http:','https:'].includes(site.protocol)||site.pathname!=='/')throw Error('INVALID_ORIGIN');
  const store=await openStorage(directory),sql=store.sql,root=resolve(publicDirectory),secure=site.protocol==='https:';
@@ -18,9 +19,11 @@ export async function startServer({directory,publicDirectory,origin,basePath='/s
   sql.prepare('INSERT INTO accounts VALUES (?,?)').run('admin',await passwordHash(bootstrapPassword));
  }
  if(journal)store.JOURNAL_RUNTIME=await createJournalRuntime({engineDirectory:fileURLToPath(new URL(typeof SHUYE_BUNDLED_JOURNAL_PATH==='string'?SHUYE_BUNDLED_JOURNAL_PATH:'../journal-engine/',import.meta.url)),...journal,directory:resolve(directory,'journal-proofs')});
+ if(assistant)store.LAYOUT_ASSISTANT=await createLayoutAssistant({...assistant,directory:resolve(directory,'layout-plans')});
  const attempts=new Map();let activeApi=0;
  const cookie=(token,age=604800)=>`shuye_session=${token}; Path=${basePath}/; HttpOnly; SameSite=Strict; Max-Age=${age}${secure?'; Secure':''}`;
- function page(title,content){return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} · 书页</title><link rel="stylesheet" href="${basePath}/dashboard.css"></head><body><main class="auth-card"><a href="${basePath}/">书页 · 在线出版工作台</a><h1>${title}</h1>${content}</main></body></html>`;}
+ const brand=`<a class="auth-brand" href="${basePath}/" aria-label="书页 · 项目库"><svg viewBox="0 0 48 48" width="36" height="36" aria-hidden="true" focusable="false"><use href="${basePath}/brand/shuye-mark.svg#mark"/></svg><span>书页</span></a>`;
+ function page(title,content){return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} · 书页</title><link rel="icon" type="image/svg+xml" href="${basePath}/favicon.svg"><link rel="stylesheet" href="${basePath}/dashboard.css"><link rel="stylesheet" href="${basePath}/brand/brand-colors.css"></head><body><main class="auth-card">${brand}<h1>${title}</h1>${content}</main></body></html>`;}
  const form=(path,content,label)=>`<form method="post" action="${basePath}${path}">${content}<button class="primary">${label}</button></form>`;
  const input=(name,label,type='password')=>`<label>${label}<input name="${name}" type="${type}" required maxlength="256" autocomplete="${name==='newPassword'?'new-password':'current-password'}"></label>`;
  const server=createServer(async(req,res)=>{
@@ -44,7 +47,9 @@ export async function startServer({directory,publicDirectory,origin,basePath='/s
    if(path==='/api/session'){json(200,{user:owner||null});return;}
    if(path==='/signin-with-chatgpt'||path==='/login'){
     if(req.method!=='POST'){send(200,page('登录',form('/login',input('password','管理员密码'),'登录')+'<p>使用本站独立账号，无需 ChatGPT 登录。</p>'));return;}
-    const ip=req.socket.remoteAddress+'|'+(req.headers['x-real-ip']||'');
+    // Forwarding headers are attacker-controlled unless a separately configured
+    // trusted proxy strips them. Keep the budget on the actual connection peer.
+    const ip=req.socket.remoteAddress;
     const now=Date.now();for(const [key,a] of attempts)if(now-a.start>900000)attempts.delete(key);
     const attempt=attempts.get(ip)||{start:now,count:0};if(attempt.count>=10||attempts.size>10000){json(429,{error:'LOGIN_RATE_LIMIT'});return;}attempt.count++;attempts.set(ip,attempt);
     const fields=new URLSearchParams((await body(4096)).toString());
@@ -70,7 +75,7 @@ export async function startServer({directory,publicDirectory,origin,basePath='/s
     try{const headers=new Headers({'content-type':'application/json','oai-authenticated-user-id':owner});if(req.headers.origin)headers.set('origin',req.headers.origin);const r=await handle(new Request(u,{method:'POST',headers,body:await body()}),store,path==='/mcp');send(r.status,Buffer.from(await r.arrayBuffer()),r.headers.get('content-type')||'application/json');}finally{activeApi--;}return;
    }
    if(req.method==='POST'){json(404,{error:'NOT_FOUND'});return;}
-   if(path==='/'||path==='/index.html'){send(200,page('我的出版项目',`<div id="root"></div><script src="${basePath}/config.js"></script><script type="module" src="${basePath}/dashboard.js"></script>`).replace('<main class="auth-card">','<main>').replace('<h1>我的出版项目</h1>','').replace(`<a href="${basePath}/">书页 · 在线出版工作台</a>`,''));return;}
+   if(path==='/'||path==='/index.html'){send(200,page('我的出版项目',`<div id="root"></div><script src="${basePath}/config.js"></script><script type="module" src="${basePath}/dashboard.js"></script>`).replace('<main class="auth-card">','<main>').replace('<h1>我的出版项目</h1>','').replace(brand,''));return;}
    const decoded=decodeURIComponent(path);if(decoded.includes('\0')||decoded.split('/').some(v=>v==='..'||v.startsWith('.'))||decoded.includes('\\')){json(404,{error:'NOT_FOUND'});return;}
    const target=resolve(root,'.'+decoded);if(!target.startsWith(root+sep)){json(404,{error:'NOT_FOUND'});return;}
    const info=await stat(target);if(!info.isFile())throw Object.assign(Error('not found'),{code:'ENOENT'});
@@ -81,7 +86,7 @@ export async function startServer({directory,publicDirectory,origin,basePath='/s
  });
  server.requestTimeout=120000;server.headersTimeout=15000;
  await new Promise((ok,fail)=>{server.once('error',fail);server.listen(port,host,ok)});
- return {server,store,close:async()=>{await store.JOURNAL_RUNTIME?.close();await new Promise(r=>server.close(r));store.close();}};
+ return {server,store,close:async()=>{await store.LAYOUT_ASSISTANT?.close();await store.JOURNAL_RUNTIME?.close();await new Promise(r=>server.close(r));store.close();}};
 }
 if(process.argv[1]&&realpathSync(process.argv[1])===realpathSync(fileURLToPath(import.meta.url))){
  const config=JSON.parse(await readFile(process.env.SHUYE_CONFIG||'/etc/shuye/config.json','utf8'));

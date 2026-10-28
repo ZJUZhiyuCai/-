@@ -1,1 +1,80 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>整期编排 · 书页</title><link rel="stylesheet" href="./issue.css"></head><body><main><header><a href="./">← 项目库</a><h1>整期编排</h1><p>选择已排版的文章，确认顺序，生成目录、连续页码和可编辑 Word。</p></header><div id="status" role="status" aria-live="polite">正在读取工程…</div><section><h2>整期方案</h2><label>已保存方案<select id="issues"><option value="">新建方案</option></select></label><label>刊期名称<input id="title" value="整期校样" maxlength="120"></label><div class="fields"><label>正文起始页<input id="firstPage" type="number" min="1" max="9000" value="1"></label><label>成品宽 mm<input id="width" type="number" min="100" max="320" value="210"></label><label>成品高 mm<input id="height" type="number" min="140" max="450" value="285"></label></div><p id="revision">尚未保存</p><label>历史方案<select id="history"><option value="">选择历史方案预览</option></select></label><button id="save">保存方案</button> <button id="generate" class="primary">生成整期校样</button> <button id="resume">取回上次任务</button></section><div class="columns"><section><h2>文章工程</h2><p>来源需已应用期刊模板。加入后记录当前修订；源稿修改后请重新加入以更新绑定。</p><div id="projects"></div></section><section><h2>刊载顺序</h2><p>使用上移、下移调整顺序，目录与页码将随最终排版重算。</p><ol id="articles"></ol></section></div><section id="delivery" hidden><h2>校样与下载</h2><p id="quality"></p><div id="downloads"></div><table><thead><tr><th>文章</th><th>页码</th><th>检查结果</th></tr></thead><tbody id="contents"></tbody></table><details><summary>质量报告</summary><pre id="report"></pre></details></section></main><script type="module" src="./issue.mjs"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>整期编排 · 书页</title>
+  <link rel="stylesheet" href="./issue.css">
+  <link rel="stylesheet" href="./brand/brand-colors.css">
+</head>
+<body>
+  <header class="appbar">
+    <h1 class="sr-only">整期编排</h1>
+    <a class="brand-home" href="./" aria-label="书页 · 项目库" title="书页"><svg viewBox="0 0 48 48" width="28" height="28" aria-hidden="true" focusable="false"><use href="./brand/shuye-mark.svg#mark"/></svg></a>
+    <nav class="workspaces" aria-label="工作区"><a href="./">项目库</a><a href="./issue.html" aria-current="page">整期编排</a><a href="./#templates">模板</a></nav>
+    <span class="bar-rule" aria-hidden="true"></span>
+    <label class="issue-switch"><span class="sr-only">整期方案</span><select id="issues"><option value="">新建方案</option></select></label>
+    <span id="revision" class="revision">尚未保存</span>
+    <div class="bar-actions">
+      <button id="save" type="button" class="quiet" title="保存方案 · Ctrl/⌘+S">保存</button>
+      <button id="generate" type="button" class="primary">生成整期校样</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <aside class="source-panel" aria-labelledby="source-heading">
+      <div class="panel-head"><h2 id="source-heading">文章</h2><span id="project-count"></span></div>
+      <label class="source-filter"><span class="sr-only">筛选文章</span><input id="source-filter" type="search" placeholder="筛选" autocomplete="off"></label>
+      <div id="projects" role="list"></div>
+    </aside>
+
+    <div class="canvas">
+      <section id="toc" class="toc" aria-labelledby="sequence-heading">
+        <header class="toc-head">
+          <h2 id="sequence-heading" class="toc-kicker">目录</h2>
+          <label><span class="sr-only">刊期名称</span><input id="title" value="整期校样" maxlength="120" autocomplete="off"></label>
+        </header>
+        <div id="sequence-empty" class="sequence-empty"><p>将左侧文章拖到这里</p></div>
+        <ol id="articles"></ol>
+      </section>
+    </div>
+
+    <aside class="settings-panel" aria-label="整期方案">
+      <section class="panel-section" aria-labelledby="page-heading">
+        <h2 id="page-heading">页面</h2>
+        <div class="size-row">
+          <label class="field"><span>宽</span><input id="width" type="number" min="100" max="320" value="210" aria-label="宽度（毫米）"></label>
+          <i aria-hidden="true">×</i>
+          <label class="field"><span>高</span><input id="height" type="number" min="140" max="450" value="285" aria-label="高度（毫米）"></label>
+          <i aria-hidden="true">mm</i>
+        </div>
+        <label class="inline-field">正文起始页<input id="firstPage" type="number" min="1" max="9000" value="1"></label>
+      </section>
+
+      <section id="proof" class="panel-section proof" data-state="idle" aria-labelledby="proof-heading" hidden>
+        <div class="section-head"><h2 id="proof-heading">校样</h2><span id="proof-state" class="proof-state"></span></div>
+        <div id="proof-run" class="proof-run" hidden><span class="proof-bar" aria-hidden="true"></span><span id="proof-clock" class="proof-clock">0:00</span><button id="stop-wait" type="button" class="quiet" data-keep="1">停止等待</button></div>
+        <p id="proof-message" class="proof-message"></p>
+        <div id="delivery" class="delivery" hidden>
+          <p id="quality"></p>
+          <div id="downloads" class="downloads"></div>
+          <table><thead><tr><th>文章</th><th>页码</th><th>检查</th></tr></thead><tbody id="contents"></tbody></table>
+          <details><summary>质量报告</summary><pre id="report"></pre></details>
+        </div>
+        <button id="resume" type="button" class="quiet resume" hidden>取回上次校样</button>
+      </section>
+
+      <section id="history-section" class="panel-section" aria-labelledby="history-heading" hidden>
+        <h2 id="history-heading">修订</h2>
+        <ol id="history" class="history"></ol>
+      </section>
+    </aside>
+  </main>
+
+  <div id="error-notice" class="error-notice" role="alert" hidden><span id="error-text"></span><button id="error-close" type="button" data-keep="1" aria-label="关闭提示">×</button></div>
+  <footer class="statusbar"><div id="status" role="status" aria-live="polite">正在读取工程…</div><span id="article-count">0 篇</span><span>书页 0.7.0</span></footer>
+  <script type="module" src="./issue.mjs"></script>
+</body>
+</html>

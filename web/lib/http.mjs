@@ -18,9 +18,9 @@ export async function handle(request,env,mcp=false){
       if(input.method==='ping')return success({});
       if(input.method==='tools/list')return success({tools:toolList()});
       if(input.method!=='tools/call')return json({jsonrpc:'2.0',id:input.id??null,error:{code:-32601,message:'Method not found'}});
-      try{const store=Object.assign(new CloudStore(env.DB,env.BUCKET,request.headers.get('oai-authenticated-user-id')),{journalRuntime:env.JOURNAL_RUNTIME});const {responseMode='full',...args}=input.params?.arguments||{};if(!['full','summary'].includes(responseMode))throw Error('INVALID_RESPONSE_MODE');const value=await callTool(store,input.params?.name,args);return success(mcpResult(value,responseMode));}catch(e){return success({content:[{type:'text',text:e.message}],isError:true});}
+      try{const store=Object.assign(new CloudStore(env.DB,env.BUCKET,request.headers.get('oai-authenticated-user-id')),{journalRuntime:env.JOURNAL_RUNTIME,layoutAssistant:env.LAYOUT_ASSISTANT});const {responseMode='full',...args}=input.params?.arguments||{};if(!['full','summary'].includes(responseMode))throw Error('INVALID_RESPONSE_MODE');const value=await callTool(store,input.params?.name,args);return success(mcpResult(value,responseMode));}catch(e){return success({content:[{type:'text',text:e.message}],isError:true});}
     }
-    const store=Object.assign(new CloudStore(env.DB,env.BUCKET,request.headers.get('oai-authenticated-user-id')),{journalRuntime:env.JOURNAL_RUNTIME});
+    const store=Object.assign(new CloudStore(env.DB,env.BUCKET,request.headers.get('oai-authenticated-user-id')),{journalRuntime:env.JOURNAL_RUNTIME,layoutAssistant:env.LAYOUT_ASSISTANT});
     return json(await callTool(store,input.tool,input.arguments));
   }catch(e){return json({error:e.message},errorStatus(e));}
 }
