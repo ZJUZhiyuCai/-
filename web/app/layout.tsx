@@ -17,6 +17,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
+      <head>
+        <link rel="stylesheet" href="/brand/brand-colors.css" />
+      </head>
       <body className="antialiased">{children}</body>
     </html>
   );

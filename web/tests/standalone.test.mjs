@@ -22,6 +22,10 @@ test('standalone authentication, persistence, version restore, MCP tokens and su
   const login=await post('/login','password='+password);assert.equal(login.status,303);
   const cookie=login.headers.get('set-cookie').split(';')[0];assert.match(login.headers.get('set-cookie'),/HttpOnly; SameSite=Strict/);
   assert.match(await (await req('/config.js')).text(),/\/shuye/);
+  // 品牌资源在子路径下可达、类型正确；登录页带标记与 favicon，项目库根页去掉登录卡标识。
+  const loginPage=await(await req('/login')).text();assert.match(loginPage,/<use href="\/shuye\/brand\/shuye-mark\.svg#mark"\/>/);assert.match(loginPage,/<link rel="icon" type="image\/svg\+xml" href="\/shuye\/favicon\.svg">/);
+  const home=await(await req('/')).text();assert.doesNotMatch(home,/auth-brand/);assert.match(home,/href="\/shuye\/favicon\.svg"/);
+  const mark=await req('/brand/shuye-mark.svg');assert.equal(mark.status,200);assert.equal(mark.headers.get('content-type'),'image/svg+xml');assert.match(await mark.text(),/id="mark"/);
   const editor=await req('/editor/index.html');assert.equal(editor.status,200);assert.match(await editor.text(),/class="back-library" href="\/shuye\/"/);
   assert.deepEqual(await(await req('/api/session',{headers:{cookie}})).json(),{user:'admin'});
   const api=async(tool,args={})=>{const r=await post('/api/mcp-projects',JSON.stringify({tool,arguments:args}),cookie);return {status:r.status,value:await r.json()};};
