@@ -168,12 +168,22 @@ function drawHistory(){
 // 与已保存修订完全相同时不再新建修订：否则 Ctrl+S 或“生成”会让刚取回的校样因修订号变化失效（服务端也会判为过期并拒绝下载）。
 async function save(){if(revision&&!dirty()){settle();paintChrome();status('方案 r'+revision+' 没有新的修改。');return null;}const sent=plan(),r=await api('save_issue',{issueId,expectedRevision:revision,plan:sent});revision=r.revision;history=r.history;savedKey=JSON.stringify(sent);settle();drawHistory();await loadIssues();status('整期方案 r'+revision+' 已保存；单篇源稿保持原状。');return r;}
 async function loadIssues(){const data=await api('list_issues');el('issues').replaceChildren(new Option('新建方案',''));for(const r of data.issues)el('issues').add(new Option(r.title+' · r'+r.revision,r.issueId));el('issues').value=revision?issueId:'';}
+async function loadProjects(){
+ const data=await api('list_projects');projectNames.clear();projectRevisions.clear();ineligible.clear();
+ for(const p of data.projects){projectNames.set(p.projectId,p.title);projectRevisions.set(p.projectId,p.revision);}
+ const available=data.projects.filter(p=>!p.archived);el('project-count').textContent=String(available.length);drawSources(available);
+}
 el('issues').onchange=()=>{
  if(edited()&&!confirm('当前方案有未保存的修改，切换后将丢失。继续？')){el('issues').value=revision?issueId:'';return;}
  guard(async()=>{
   run?.stop();lastProof=null;proofState('idle');
   if(!el('issues').value){issueId='issue-'+crypto.randomUUID();revision=0;history=[];settle();articles=[];draw();drawHistory();savedKey=planKey();paintChrome();status('新方案：从左侧加入文章。');return;}
-  const r=await api('get_issue',{issueId:el('issues').value});issueId=r.issueId;revision=r.revision;history=r.history;settle();apply(r.plan);savedKey=planKey();drawHistory();status('已读取整期方案 r'+revision);
+  const r=await api('get_issue',{issueId:el('issues').value});
+  // An agent may have saved a newer issue or source revision since this tab opened.
+  await loadProjects();issueId=r.issueId;revision=r.revision;history=r.history;
+  const selected=[...el('issues').options].find(option=>option.value===issueId);
+  if(selected)selected.textContent=r.plan.title+' · r'+revision;
+  settle();apply(r.plan);savedKey=planKey();drawHistory();status('已读取整期方案 r'+revision);
  });
 };
 el('save').onclick=()=>guard(save);
@@ -256,8 +266,5 @@ el('resume').onclick=()=>guard(async()=>{
 
 // —— 启动
 await guard(async()=>{
- await loadIssues();const data=await api('list_projects');
- for(const p of data.projects){projectNames.set(p.projectId,p.title);projectRevisions.set(p.projectId,p.revision);}
- const available=data.projects.filter(p=>!p.archived);el('project-count').textContent=String(available.length);
- drawSources(available);draw();savedKey=planKey();paintChrome();status('请选择文章工程，按刊载顺序保存方案。');
+ await loadIssues();await loadProjects();draw();savedKey=planKey();paintChrome();status('请选择文章工程，按刊载顺序保存方案。');
 });
