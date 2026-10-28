@@ -34,3 +34,8 @@ class JournalHeaderDefaultsTests(unittest.TestCase):
         self.assertIn('CUSTOM-ODD', pages[0])
         self.assertIn('CUSTOM-EVEN', pages[1])
         self.assertIn('Proof1', ''.join(pages[0].split()))
+        doc['layout'].update(headerOdd='EXPLICIT-ODD')
+        explicit = render_pdf(doc)
+        with pdfplumber.open(BytesIO(explicit['pdf'])) as pdf:
+            self.assertIn('EXPLICIT-ODD', pdf.pages[0].extract_text())
+            self.assertIn('CUSTOM-EVEN', pdf.pages[1].extract_text())

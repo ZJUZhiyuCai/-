@@ -328,7 +328,12 @@ def build_tex(doc,assets_dir,math_widths=None):
         # Saving normalizes both page sides to the generic book placeholder.
         # Only an actual override may replace the journal masthead/running head.
         if any(key in layout and layout[key]!='书页 · 开源排版' for key in ('header','headerEven','headerOdd')):
-            overrides+=r'\fancyhead{}\fancyhead[LE]{'+escape(layout.get('headerEven',layout.get('header','')))+r'}\fancyhead[RO]{'+escape(layout.get('headerOdd',layout.get('header','')))+'}'
+            # A normalized placeholder on one side must not shadow an explicit
+            # shared header. Explicit empty strings still mean "hide this side".
+            def journal_header(side):
+                value=layout.get(side,layout.get('header',''))
+                return layout.get('header','') if value=='书页 · 开源排版' else value
+            overrides+=r'\fancyhead{}\fancyhead[LE]{'+escape(journal_header('headerEven'))+r'}\fancyhead[RO]{'+escape(journal_header('headerOdd'))+'}'
         # The normalized book footer is also a placeholder. Journals already
         # carry their folio in the running head; do not duplicate it below.
 
