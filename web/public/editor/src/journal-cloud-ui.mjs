@@ -1,9 +1,14 @@
 import {documentFingerprint} from './project-sync.mjs';
 import {showJournalReport} from './journal-report-ui.mjs';
+import {ProofSession} from './proof-session.mjs';
 
 export function setupJournalCloud({api,connection,getDoc,button,status}){
  const saveFile=(name,data,type)=>{const url=URL.createObjectURL(new Blob([data],{type})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);};
  const key=(id=connection.projectId)=>`shuye-proof-${id}`;
+ const proofs=new ProofSession({api,connection,readId:id=>{try{return localStorage.getItem(key(id));}catch{return null;}},writeId:(id,value)=>{try{localStorage.setItem(key(id),value);}catch{}},onChange:()=>document.dispatchEvent?.(new Event('shuye:proof-changed'))});
+ let trackedProject=connection.projectId;
+ document.addEventListener?.('shuye:connection-changed',()=>{if(trackedProject!==connection.projectId){trackedProject=connection.projectId;proofs.refresh().catch(()=>{});}});
+ proofs.refresh().catch(()=>{});
  const picker=document.createElement('input');picker.type='file';picker.accept='.doc,.docx';picker.hidden=true;document.body.append(picker);
  const importButton=button('导入期刊 Word',()=>picker.click());
  const revisionPolicy=document.createElement('select');revisionPolicy.ariaLabel='Word 修订导入策略';
@@ -46,6 +51,7 @@ export function setupJournalCloud({api,connection,getDoc,button,status}){
    status('全文 PDF 正在排版；可继续编辑，完成后会检查校样是否过期。');
    await new Promise(resolve=>setTimeout(resolve,2000));result=await api('get_journal_proof',{proofId});
   }
+  proofs.remember(result);
   if(result.status==='failed')throw Error(result.error);
   if(result.projectId!==projectId||connection.projectId!==projectId)throw Error('已切换工程，校样保留在原工程中，请返回原工程取回。');
   if(result.stale||connection.dirty||connection.revision!==result.revision)throw Error('稿件已有新修改，本次校样已保留。请保存并重新生成，避免交付旧版。');
@@ -60,14 +66,20 @@ export function setupJournalCloud({api,connection,getDoc,button,status}){
   return result;
 
  }
- const generateProof=async()=>{
+ const prepareProof=async()=>{
   if(!connection.projectId)throw Error('请先保存到云端');
   if(connection.dirty)await connection.save();if(connection.dirty)throw Error('保存期间有新输入，请再次保存后生成校样');
-  const projectId=connection.projectId,proof=await api('start_journal_proof',{projectId,expectedRevision:connection.revision});
-  try{localStorage.setItem(key(projectId),proof.proofId);}catch{}
+  const projectId=connection.projectId;
+  await proofs.refresh();
+  if(projectId!==connection.projectId||connection.dirty)throw Error('文稿已变化，请保存后重新生成校样');
+  if(['ready','running'].includes(proofs.state))return finish(proofs.proof.proofId,projectId);
+  const proof=await api('start_journal_proof',{projectId,expectedRevision:connection.revision});
+  proofs.remember(proof);
   return finish(proof.proofId,projectId);
  };
+ let proofRequest;
+ const generateProof=()=>{if(!proofRequest)proofRequest=prepareProof().finally(()=>{proofRequest=null;});return proofRequest;};
  button('全文期刊 PDF',generateProof);
  button('取回期刊校样',async()=>{const projectId=connection.projectId,proofId=localStorage.getItem(key());if(!proofId)throw Error('当前工程没有已记录的校样任务');await finish(proofId,projectId);});
- return {generateProof};
+ return {generateProof,proofState:()=>proofs.state};
 }

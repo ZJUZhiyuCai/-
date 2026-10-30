@@ -368,10 +368,15 @@ export function setupWorkbench({getDoc,connection,fit}){
  const contextLine=el('p','', 'assistant-context');
  const form=el('form'),prompt=el('textarea');prompt.rows=4;prompt.maxLength=1200;prompt.placeholder='描述你希望怎样排版…\n例如：改为双栏，栏距 6 mm，正文 9 pt';prompt.setAttribute('aria-label','排版要求');
  const ideaRow=el('div',undefined,'assistant-ideas');ideaRow.setAttribute('role','group');ideaRow.setAttribute('aria-label','常用要求');
- const ideas=[['边距 25 mm','内外边距改为 25 毫米'],['双栏','正文改为双栏'],['字号 9 pt','正文字号设为 9 pt'],['行距 1.6','正文行距设为 1.6 倍']].map(([text,phrase])=>{
-  const b=button(text,()=>{const v=prompt.value.trim().replace(/[，,。；;、]+$/,''),next=v?`${v}，${phrase}`:phrase;if(next.length<=prompt.maxLength)prompt.value=next;prompt.focus();prompt.setSelectionRange(prompt.value.length,prompt.value.length);},'assistant-idea');
+ let ideaMode,ideas=[];
+ function renderIdeas(){
+ const journal=!!getDoc().journal;if(ideaMode===journal)return;ideaMode=journal;ideaRow.replaceChildren();
+ const presets=journal?[['期刊双栏','正文改为双栏，栏距设为6毫米，内外边距都设为15毫米，正文字号设为9pt，正文行距设为1.6倍。其他参数保持不变。'],['字号 9 pt','正文字号设为 9 pt'],['行距 1.6','正文行距设为 1.6 倍']]:[['边距 25 mm','内外边距改为 25 毫米'],['双栏','正文改为双栏'],['字号 9 pt','正文字号设为 9 pt'],['行距 1.6','正文行距设为 1.6 倍']];
+ ideas=presets.map(([text,phrase])=>{
+  const b=button(text,()=>{const v=prompt.value.trim().replace(/[，,。；;、]+$/,''),next=v.includes(phrase.replace(/[。]+$/,''))?prompt.value:v?`${v}；${phrase}`:phrase;if(next.length<=prompt.maxLength)prompt.value=next;prompt.dispatchEvent(new Event('input'));prompt.focus();prompt.setSelectionRange(prompt.value.length,prompt.value.length);},'assistant-idea');
   b.title=phrase;ideaRow.append(b);return b;
  });
+ }
  const submit=el('button','生成建议','primary');submit.type='submit';const promptActions=el('div',undefined,'assistant-form-actions');promptActions.append(submit);
  const availability=el('p','正在检查本机模型…','assistant-hint assistant-availability');
  const reconnect=button('检查连接',()=>checkAssistant(),'assistant-reconnect');reconnect.hidden=true;
@@ -383,7 +388,7 @@ export function setupWorkbench({getDoc,connection,fit}){
  panel.append(contextLine,steps,editRequest,form,notice,result,scope);
  prompt.addEventListener('keydown',e=>{if(e.key==='Enter'&&modKey(e)){e.preventDefault();if(!submit.disabled)form.requestSubmit(submit);}});
  prompt.title=`${keys('Mod+Enter')} 生成建议`;
- let enabled=false,busy=false,plan=null,applyButton,undoButton,pollGeneration=0,proofBusy=false,compactedPlanId,trackedProject=connection.projectId,pollError=false;
+ let enabled=false,busy=false,plan=null,applyButton,undoButton,planProofButton,pollGeneration=0,proofBusy=false,compactedPlanId,trackedProject=connection.projectId,pollError=false;
  const planKey=()=>`shuye-layout-plan-${connection.projectId}`;
  const api=(name,args={})=>connection.api(name,args);
  const tell=(text,error=false)=>{notice.textContent=text;notice.classList.toggle('error',error);};
@@ -391,13 +396,16 @@ export function setupWorkbench({getDoc,connection,fit}){
  const identity=()=>({projectId:plan.projectId,planId:plan.planId});
  function sync(){
   const d=getDoc();
+  renderIdeas();
   contextLine.textContent=`${d.layout.width} × ${d.layout.height} mm · ${d.layout.columns===2?'双栏':d.layout.columns===1?'单栏':d.layout.columns+' 栏'} · ${d.blocks.length} 个组件`;
   route.textContent=compMode?'自由版面':d.journal?'期刊':'流式文稿';route.dataset.mode=compMode?'composition':d.journal?'journal':'flow';
   // 流式文稿是默认形态，不再额外标注；只有期刊与自由版面需要提示。
   route.hidden=!compMode&&!d.journal;
   if(modeReturn)modeReturn.hidden=!compMode;
-  proofButton.textContent=proofBusy?'正在生成…':d.journal&&!d.composition?'生成校样':'校样 / 输出';
-  submit.disabled=!enabled||busy||plan?.status==='running'||!connection.projectId||!!d.composition;submit.textContent=busy||plan?.status==='running'?'正在生成…':connection.dirty?'保存并生成建议':'生成建议';
+  const proofState=connection.journalUI?.proofState?.(),proofLabel=proofState==='ready'?'查看校样':proofState==='stale'?'更新校样':proofState==='running'?'取回校样':'生成校样';
+  proofButton.textContent=proofBusy?'正在处理…':d.journal&&!d.composition?proofLabel:'校样 / 输出';
+  if(planProofButton){planProofButton.textContent=proofBusy?'正在处理…':proofLabel;planProofButton.disabled=proofBusy||busy||connection.writing||connection.projectId!==plan?.projectId;}
+  submit.disabled=!enabled||busy||plan?.status==='running'||!connection.projectId||!!d.composition||!prompt.value.trim();submit.textContent=busy||plan?.status==='running'?'正在生成…':connection.dirty?'保存并生成建议':'生成建议';
   for(const idea of ideas)idea.disabled=!!d.composition;
   if(applyButton)applyButton.disabled=busy||connection.writing||!clean()||plan?.stale||connection.projectId!==plan?.projectId||connection.revision!==plan?.revision;
   if(undoButton)undoButton.disabled=busy||connection.writing||!clean()||connection.projectId!==plan?.projectId||connection.revision!==plan?.appliedRevision;
@@ -412,14 +420,15 @@ export function setupWorkbench({getDoc,connection,fit}){
   if(!changed.size)return null;
   const k=Math.min(118/Math.max(Number(before.width)||185,Number(after.width)||185),150/Math.max(Number(before.height)||260,Number(after.height)||260));
   const figure=el('figure',undefined,'assistant-preview');figure.setAttribute('aria-hidden','true');
-  for(const [layout,text,marks] of [[before,'原',null],[after,'新',changed]]){const page=el('div',undefined,'assistant-preview-page');page.append(spread(layout,{single:true,changed:marks,scale:k}),el('span',text));figure.append(page);}
+  for(const [layout,text,marks] of [[before,'当前版式',null],[after,'建议版式',changed]]){const page=el('div',undefined,'assistant-preview-page');page.append(spread(layout,{single:true,changed:marks,scale:k}),el('span',text));figure.append(page);}
+  figure.append(el('figcaption','版式示意 · 实际分页以 PDF 为准'));
   return figure;
  }
  function draw(){
-  result.replaceChildren();applyButton=undoButton=null;
+  result.replaceChildren();applyButton=undoButton=planProofButton=null;
   editRequest.hidden=!plan;
-  if(plan&&plan.status!=='running'&&plan.planId!==compactedPlanId){compactedPlanId=plan.planId;form.hidden=true;editRequest.textContent='调整要求';editRequest.setAttribute('aria-expanded','false');}
-  steps.hidden=!plan;
+  if(plan&&plan.status!=='running'&&plan.planId+plan.status!==compactedPlanId){compactedPlanId=plan.planId+plan.status;form.hidden=['review','applied'].includes(plan.status);editRequest.textContent=form.hidden?'调整要求':'收起要求';editRequest.setAttribute('aria-expanded',String(!form.hidden));}
+  steps.hidden=!plan||['undone','cancelled','unsupported','failed'].includes(plan.status);
   const status=plan?.status,current=status==='review'||status==='running'?1:status==='applied'?2:0;
   stepItems.forEach((li,i)=>{li.dataset.state=i<current?'done':i===current?'current':'todo';if(i===current)li.setAttribute('aria-current','step');else li.removeAttribute('aria-current');});
   steps.dataset.busy=String(status==='running');tabs.assistant.dataset.state=status||'';
@@ -427,9 +436,9 @@ export function setupWorkbench({getDoc,connection,fit}){
   if(!plan)return;
   const names={running:'正在拟定版式',review:'待你核对',applied:'已应用',undone:'已撤销',failed:'建议生成失败',cancelled:'已取消',unsupported:'需要调整要求'};
   const head=el('div',undefined,'assistant-result-head');head.append(el('h3',names[plan.status]||plan.status),el('span',`基于文稿 r${plan.revision}`,'assistant-revision'));result.append(head);
-  if(plan.summary)result.append(el('p',plan.summary));
+  if(plan.summary&&!['review','applied','undone'].includes(plan.status))result.append(el('p',plan.summary));
   if(plan.error)result.append(el('p',messages[plan.error]||plan.error,'error'));
-  if(plan.changes?.length){
+  if(plan.changes?.length&&['review','applied'].includes(plan.status)){
    const table=el('table',undefined,'assistant-diff'),headRow=el('tr');
    for(const text of ['参数','原来','建议']){const th=el('th',text);th.scope='col';headRow.append(th);}table.append(headRow);
    for(const c of plan.changes){const row=el('tr'),th=el('th',labels[c.field]||c.field);th.scope='row';row.append(th,el('td',String(c.before)+(units[c.field]??' mm')),el('td',String(c.after)+(units[c.field]??' mm')));table.append(row);}
@@ -443,7 +452,7 @@ export function setupWorkbench({getDoc,connection,fit}){
   if(['failed','cancelled','unsupported'].includes(plan.status))planActions.append(button('修改要求并重试',()=>{form.hidden=false;editRequest.textContent='收起要求';editRequest.setAttribute('aria-expanded','true');prompt.focus();}));
   if(plan.status==='review'){applyButton=button(`应用这 ${plan.changes.length} 项修改`,()=>mutate('apply_layout_plan'),'primary');planActions.append(applyButton);}
   if(plan.status==='applied'){
-   planActions.append(button('生成校样',()=>runProof(true),'primary'));undoButton=button('撤销本次修改',()=>mutate('undo_layout_plan'));planActions.append(undoButton);
+   planProofButton=button('生成校样',()=>runProof(true),'primary');planActions.append(planProofButton);undoButton=button('撤销本次修改',()=>mutate('undo_layout_plan'));planActions.append(undoButton);
    result.append(el('p',`已保存为 r${plan.appliedRevision} · 请核对新校样`,'assistant-hint'));
   }
   if(plan.status==='undone')result.append(el('p',`已恢复原版式，当前 r${plan.undoneRevision}。`));
@@ -474,8 +483,8 @@ export function setupWorkbench({getDoc,connection,fit}){
   if(!getDoc().journal||getDoc().composition){openCommands('校样','校样与输出');return;}
   const say=(text,tone,sticky=false)=>{notify(text,tone,sticky);if(fromAssistant)tell(text,tone==='error');};
   proofBusy=true;proofButton.disabled=true;proofButton.setAttribute('aria-busy','true');body.classList.add('wb-proofing');sync();
-  say('正在生成当前版本的期刊校样…','progress',true);
-  try{const proof=await connection.journalUI.generateProof(),blocked=proof.report?.quality?.status==='BLOCKED';say(`校样 r${proof.revision} 已生成：${proof.pages} 页。${blocked?'存在质量阻断，请查看报告。':'请打开 PDF 核对实际页面。'}`,blocked?'warn':'ok',blocked);}
+  say(connection.journalUI.proofState?.()==='ready'?'正在取回当前修订的校样…':'正在准备当前版本的期刊校样…','progress',true);
+  try{const proof=await connection.journalUI.generateProof(),blocked=proof.report?.quality?.status==='BLOCKED';say(`校样 r${proof.revision} · ${proof.pages} 页。${blocked?'存在质量阻断，请查看报告。':'请核对 PDF 实际页面。'}`,blocked?'warn':'ok',blocked);}
   catch(e){say(messages[e.message]||e.message,'error');}
   finally{proofBusy=false;proofButton.disabled=false;proofButton.removeAttribute('aria-busy');body.classList.remove('wb-proofing');sync();}
  }
@@ -512,6 +521,8 @@ export function setupWorkbench({getDoc,connection,fit}){
  });
 
  document.addEventListener('shuye:document-changed',()=>queueMicrotask(()=>{sync();fit();drawSpread();}));
+ document.addEventListener('shuye:proof-changed',sync);
+ prompt.addEventListener('input',sync);
  document.addEventListener('shuye:connection-changed',()=>{if(trackedProject!==connection.projectId){trackedProject=connection.projectId;pollGeneration++;plan=null;compactedPlanId=null;form.hidden=false;editRequest.setAttribute('aria-expanded','true');tell('');draw();}else if(plan){plan.stale=connection.revision!==(plan.status==='applied'?plan.appliedRevision:plan.status==='undone'?plan.undoneRevision:plan.revision);draw();}sync();fit();});
  const observer=new ResizeObserver(()=>{if(zoomSelect.value==='fit')fit();});observer.observe(canvas);
 
