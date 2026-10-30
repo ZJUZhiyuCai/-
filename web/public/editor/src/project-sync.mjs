@@ -31,6 +31,8 @@ export class ProjectConnection {
   }
   async save(){
     if(!this.projectId)throw Error('NOT_CONNECTED');if(this.writing)throw Error('SAVE_IN_PROGRESS');
+    // A habitual Ctrl/Cmd+S must not invalidate a reviewed AI plan or proof.
+    if(!this.dirty)return {projectId:this.projectId,revision:this.revision,unchanged:true};
     this.writing=true;
     // Invalidate reads already in flight as well as blocking new polls.
     // A pre-save response can arrive after this write has completed.
@@ -49,5 +51,18 @@ export class ProjectConnection {
       return r;
     }finally{this.writing=false;this.onChange();}
   }
-  async poll(){if(!this.projectId||this.busy||this.writing||this.dirty)return false;this.busy=true;const epoch=this.epoch;try{const r=await this.api('get_project',{projectId:this.projectId});if(epoch!==this.epoch||this.writing||this.dirty||r.revision===this.revision)return false;if(await this.replaceSnapshot(r.document)===false)throw Error('DOCUMENT_REJECTED');if(epoch!==this.epoch)return false;this.revision=r.revision;this.base=documentFingerprint(r.document);this.onChange();return true;}finally{this.busy=false;}}
+  async poll(){
+    if(!this.projectId||this.busy||this.writing||this.dirty)return false;
+    this.busy=true;const epoch=this.epoch,projectId=this.projectId;
+    const interrupted=()=>epoch!==this.epoch||this.writing||this.dirty;
+    try{
+      const status=await this.api('get_project_status',{projectId});
+      if(interrupted()||status.revision<=this.revision)return false;
+      const r=await this.api('get_project',{projectId});
+      if(interrupted()||r.revision<=this.revision)return false;
+      if(await this.replaceSnapshot(r.document)===false)throw Error('DOCUMENT_REJECTED');
+      if(epoch!==this.epoch)return false;
+      this.revision=r.revision;this.base=documentFingerprint(r.document);this.onChange();return true;
+    }finally{this.busy=false;}
+  }
 }

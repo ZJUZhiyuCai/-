@@ -1,12 +1,21 @@
 // Report data can contain manuscript text. Render only text nodes, never HTML.
-export function showJournalReport(result){
+export function showJournalReport(result,{openPdf,downloadPdf,downloadReport}={}){
  const report=result.report,quality=report.quality,items=quality.diagnostics||[];
  const errors=items.filter(d=>d.severity==='error'),warnings=items.filter(d=>d.severity!=='error');
- const dialog=document.createElement('dialog');dialog.style.cssText='width:min(760px,90vw);max-height:85vh;overflow:auto;padding:24px';
+ const dialog=document.createElement('dialog');dialog.className='proof-dialog';dialog.setAttribute('aria-labelledby','proofTitle');
  const append=(parent,tag,text)=>{const el=document.createElement(tag);el.textContent=text;parent.append(el);return el;};
- append(dialog,'h2',errors.length?`校样有 ${errors.length} 项阻断`:'校样已生成，待逐页验收');
- append(dialog,'p',`${result.pages} 页 · ${report.formulaCoverage?.total??'未统计'} 个数学区 · 工程 ${result.projectId} · 修订 ${result.revision}`);
- append(dialog,'p','PDF 和完整报告已下载。以下页码是 PDF 物理页；这是当前修订的检查记录，修改稿件后请重新生成。');
+ const header=append(dialog,'header','');header.className='proof-heading';
+ const title=append(header,'h2',errors.length?`校样有 ${errors.length} 项阻断`:'校样已生成');title.id='proofTitle';
+ append(header,'span',`r${result.revision} · 待人工验收`);
+ const metrics=append(dialog,'dl','');metrics.className='proof-metrics';
+ const fonts=report.fonts||[],coverage=report.semanticLayout?.sourceObjectCoverage;
+ for(const [name,value] of [['PDF 页数',result.pages],['数学区',report.formulaCoverage?.total??'—'],['字体嵌入',fonts.length?`${fonts.filter(f=>f.embedded).length} / ${fonts.length}`:'—'],['对象映射',coverage?`${coverage.mapped} / ${coverage.expected}`:'—']]){
+  const item=append(metrics,'div','');append(item,'dt',name);append(item,'dd',String(value));
+ }
+ const actions=append(dialog,'div','');actions.className='proof-actions';
+ const actionError=append(dialog,'p','');actionError.hidden=true;actionError.setAttribute('role','alert');
+ for(const [text,fn,primary] of [['打开 PDF 校样',openPdf,true],['下载 PDF',downloadPdf],['检查报告',downloadReport]])if(fn){const b=append(actions,'button',text);b.type='button';if(primary)b.className='primary';b.onclick=async()=>{if(b.disabled)return;b.disabled=true;actionError.hidden=true;try{await fn();}catch(e){actionError.textContent=e.message;actionError.hidden=false;}finally{b.disabled=false;}};}
+ append(dialog,'p','检查绑定当前修订。修改文稿后，请重新生成校样。').className='proof-context';
  for(const [heading,entries] of [['必须修复',errors],['待核对',warnings]]){
   if(!entries.length)continue;
   append(dialog,'h3',heading);const list=append(dialog,'ol','');
@@ -32,8 +41,12 @@ export function showJournalReport(result){
    if(d.compilerMessage){const details=append(li,'details','');append(details,'summary','编译器证据');const pre=append(details,'pre',d.compilerMessage);pre.style.whiteSpace='pre-wrap';}
   }
  }
- append(dialog,'h3','交付验收');
- append(dialog,'p','自动检查不等于可发印。仍需核对全文、公式语义、图文锚定、每页版面、字体许可和印厂要求。');
- const close=append(dialog,'button','关闭报告');close.onclick=()=>dialog.close();dialog.onclose=()=>dialog.remove();document.body.append(dialog);dialog.showModal();
+ const review=append(dialog,'details','');review.className='proof-review';append(review,'summary','人工验收范围');
+ append(review,'p','自动检查不等于可发印。仍需核对全文、公式语义、图文锚定、每页版面、字体许可和印厂要求。');
+ for(const text of quality.notChecked||[])append(review,'p',text);
+ const footer=append(dialog,'footer','');footer.className='proof-footer';
+ append(footer,'span',`PDF SHA-256 · ${(report.pdfSha256||'').slice(0,16)}`);
+ const close=append(footer,'button','返回编辑');close.onclick=()=>dialog.close();
+ const previous=document.activeElement;dialog.onclose=()=>{dialog.remove();previous?.focus?.();};document.body.append(dialog);dialog.showModal();
  return dialog;
 }

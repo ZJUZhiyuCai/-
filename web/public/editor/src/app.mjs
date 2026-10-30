@@ -8,6 +8,7 @@ import {
   replaceBlockText,
 } from "./model.mjs";
 import { paginate, blockElement, notesElement } from "./pagination.mjs";
+import {previewHeader} from './journal-preview.mjs';
 import { parseFbd } from "./fbd.mjs";
 import { setupAdvanced } from './advanced-ui.mjs';
 import { setupEditorTools } from './editor-tools.mjs';
@@ -134,6 +135,7 @@ function fillBlock() {
 }
 function outline() {
   const frag = document.createDocumentFragment();
+  const labelsById=new Map(doc.blocks.map(b=>[b.id,b.text]));
   for (const b of doc.blocks) {
     const el = document.createElement("button");
     el.dataset.id = b.id;
@@ -147,10 +149,11 @@ function outline() {
       table: '表', equation: '式', toc:'目', index:'索',
     }[b.type];
     const label = document.createElement("strong");
+    const tableRows=b.rows||[];
     label.textContent =
       b.type === "pageBreak"
         ? "另起一页"
-        : b.text || (b.type === "image" ? "未命名插图" : "空白段落");
+        : b.text || (b.captionIds?.map(id=>labelsById.get(id)).filter(Boolean).join(' · ')) || (b.type === 'table' ? `${tableRows.length} 行 × ${Math.max(0,...tableRows.map(row=>row.length))} 列` : b.type === "image" ? "未命名插图" : b.type === 'toc' ? '目录' : b.type === 'index' ? '索引' : "空白段落");
     el.append(icon, label);
     el.onclick = () => {
       choose(b.id);
@@ -161,7 +164,7 @@ function outline() {
     frag.append(el);
   }
   $("outline").replaceChildren(frag);
-  $("blockCount").textContent = `${doc.blocks.length} 段`;
+  $("blockCount").textContent = `${doc.blocks.length} 个组件`;
 }
 async function render() {
   const version = ++renderVersion;
@@ -196,7 +199,7 @@ async function render() {
   if(result.warnings.length){const summary=document.createElement('summary');summary.textContent=`排版提示（${result.warnings.length} 项）`;diagnostic.append(summary);for(const message of result.warnings){const p=document.createElement('p');p.textContent=message;diagnostic.append(p);}}
   lastPages = result.pages;
   const fragment = document.createDocumentFragment(),
-    l = {...doc.layout,_notes:viewDoc.notes||[],_images:new Map(viewDoc.blocks.filter(b=>b.type==='image').map(b=>[b.id,b]))};
+    l = {...doc.layout,_journal:doc.journal,_notes:viewDoc.notes||[],_images:new Map(viewDoc.blocks.filter(b=>b.type==='image').map(b=>[b.id,b]))};
   const mm = 96 / 25.4;
   result.pages.forEach((columns, index) => {
     const wrap = document.createElement("div");
@@ -212,24 +215,27 @@ async function render() {
     const left = (index + l.pageStart) % 2 === 1 ? l.inner : l.outer;
     const header = document.createElement("div");
     header.className = "paper-header";
-    header.textContent = (index+l.pageStart)%2===0?l.headerEven??l.header:l.header;
+    header.textContent = previewHeader(l,doc.journal,index+l.pageStart);
     header.style.left = `${left}mm`;
     header.style.right = `${l.width - left - (l.width - l.inner - l.outer)}mm`;
     header.style.top = `${Math.max(3, l.top - 9)}mm`;
+    const frontHeight=result.frontHeights?.[index]||0;
+    const front=document.createElement('div');front.className='paper-frontmatter';
+    Object.assign(front.style,{position:'absolute',left:`${left}mm`,top:`${l.top}mm`,width:`${l.width-l.inner-l.outer}mm`});
     const body = document.createElement("div");
     body.className = "paper-body";
     Object.assign(body.style, {
       left: `${left}mm`,
-      top: `${l.top}mm`,
+      top: `${l.top*mm+frontHeight}px`,
       width: `${l.width - l.inner - l.outer}mm`,
-      height: `${(l.height-l.top-l.bottom)*mm-(result.noteHeights[index]||0)}px`,
+      height: `${(l.height-l.top-l.bottom)*mm-(result.noteHeights[index]||0)-frontHeight}px`,
     });
     body.style.setProperty("--gap", `${l.gap}mm`);
     body.style.flexDirection=l.writingMode==='vertical-rl'?'row-reverse':'row';
     columns.forEach((parts) => {
       const col = document.createElement("div");
       col.className = "paper-column";
-      applyFlowColumn(col,l,result.width,(l.height-l.top-l.bottom)*mm-(result.noteHeights[index]||0));
+      applyFlowColumn(col,l,result.width,(l.height-l.top-l.bottom)*mm-(result.noteHeights[index]||0)-frontHeight);
       for (const part of parts) {
         const el = blockElement(part.block, l, part.block.type==='table'?part.block.text:part.text, part.continued||part.start>0,part);
         el.dataset.id = part.block.id;
@@ -300,14 +306,14 @@ async function render() {
             document.execCommand("insertText", false, text);
           };
         } else el.onclick = () => choose(part.block.id);
-        col.append(el);
+        (part.fullWidth?front:col).append(el);
       }
       body.append(col);
     });
     const footer = document.createElement("div");
     footer.className = "paper-footer";
     footer.textContent = ((index+l.pageStart)%2===0?l.footerEven:l.footer).replaceAll('{page}',String(index+l.pageStart));
-    page.append(header, body, footer);
+    page.append(header, front, body, footer);
     if(result.pageNotes[index]?.length){const notes=notesElement(result.pageNotes[index],l);Object.assign(notes.style,{left:`${left}mm`,bottom:`${l.bottom}mm`,width:`${l.width-l.inner-l.outer}mm`});page.append(notes);}
     wrap.append(page);
     fragment.append(wrap);

@@ -4,19 +4,21 @@ import {createServer} from 'node:http';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createLayoutAssistant,inferLayout,modelConfiguration} from '../standalone/layout-assistant.mjs';
+import {createLayoutAssistant,inferLayout,modelConfiguration,probeModel} from '../standalone/layout-assistant.mjs';
 import {openStorage} from '../standalone/storage.mjs';
 import {CloudStore} from '../lib/cloud-store.mjs';
 import {callTool} from '../lib/cloud-tools.mjs';
 import {documentFingerprint} from '../public/editor/src/project-sync.mjs';
 import {makeTemplate} from '../public/editor/src/templates.mjs';
+import {changedLayoutFields} from '../lib/assistant-tools.mjs';
 
 async function fixture(t,respond){
  const directory=await mkdtemp(join(tmpdir(),'shuye-assistant-')),storage=await openStorage(directory),seen=[];
  const modelServer=createServer(async(req,res)=>{
   if(req.url==='/api/tags'){res.end(JSON.stringify({models:[{name:'test-model',digest:'a'.repeat(64)}]}));return;}
   let body='';for await(const part of req)body+=part;const input=JSON.parse(body);seen.push(input);
-  const content=await respond?.(input)||JSON.stringify({kind:'proposal',summary:'内外边距调整为 25 毫米。',patch:{inner:25,outer:25}});
+  const proposal=JSON.parse(await respond?.(input)||JSON.stringify({kind:'proposal',summary:'内外边距调整为 25 毫米。',patch:{inner:25,outer:25}}));
+  const content=JSON.stringify({...proposal,patch:{...JSON.parse(input.messages.at(-1).content).layout,...proposal.patch}});
   if(!res.destroyed)res.end(JSON.stringify({model:'test-model',done:true,done_reason:'stop',message:{content}}));
  });
  await new Promise(r=>modelServer.listen(0,'127.0.0.1',r));
@@ -33,7 +35,8 @@ async function fixture(t,respond){
 test('real HTTP model transport -> persisted review -> guarded apply -> restore preserves all content',async t=>{
  const f=await fixture(t),before=await f.alice.get('paper'),p=await f.wait(await f.start());
  assert.equal(p.status,'review');assert.deepEqual(p.changes.map(c=>c.field),['inner','outer']);assert.equal((await f.alice.get('paper')).revision,1);
- const input=JSON.parse(f.seen[0].messages[1].content);assert.equal('blocks' in input,false);assert.equal('title' in input,false);assert.equal('header' in input.layout,false);assert.equal('footer' in input.layout,false);assert.equal(f.seen[0].stream,false);
+ const input=JSON.parse(f.seen[0].messages.at(-1).content);assert.equal('blocks' in input,false);assert.equal('title' in input,false);assert.equal('header' in input.layout,false);assert.equal('footer' in input.layout,false);assert.equal(f.seen[0].stream,false);
+ assert.equal(input.content.types.equation,1);assert.equal(input.constraints.preserveContent,true);
  await f.restart();assert.equal((await callTool(f.alice,'get_layout_plan',{projectId:'paper',planId:p.planId})).status,'review');
  const args={projectId:'paper',planId:p.planId,expectedRevision:1};
  await assert.rejects(()=>callTool(f.bob,'apply_layout_plan',args),/NOT_FOUND/);
@@ -43,6 +46,17 @@ test('real HTTP model transport -> persisted review -> guarded apply -> restore 
  await assert.rejects(()=>callTool(f.alice,'apply_layout_plan',args),/NOT_REVIEWABLE/);
  const undone=await callTool(f.alice,'undo_layout_plan',{...args,expectedRevision:2});assert.equal(undone.undoneRevision,3);
  assert.equal(documentFingerprint((await f.alice.get('paper')).document),documentFingerprint(before.document));
+});
+test('floating-point noise never creates a fake change; public summary describes committed operations',async t=>{
+ assert.deepEqual(changedLayoutFields({gap:6,inner:13},{gap:6.000000000000001,inner:15}),{inner:15});
+ const f=await fixture(t,()=>JSON.stringify({kind:'proposal',summary:'声称改变了全部内容',patch:{inner:25}}));
+ const p=await f.wait(await f.start());assert.match(p.summary,/1 项/);assert.equal(p.summary.includes('全部内容'),false);assert.equal(p.changes.length,1);
+});
+test('assistant readiness checks the installed model instead of configuration alone',async t=>{
+ const f=await fixture(t);const health=await callTool(f.alice,'get_layout_assistant');assert.equal(health.ready,true);assert.equal(health.modelSha256,'a'.repeat(64));assert.equal(health.busy,false);
+ const config=modelConfiguration({model:'expected'});
+ assert.deepEqual(await probeModel(config,async()=>new Response(JSON.stringify({models:[]}))),{ready:false,reason:'ASSISTANT_MODEL_NOT_INSTALLED'});
+ assert.deepEqual(await probeModel(config,async()=>{throw Error('offline');}),{ready:false,reason:'MODEL_SERVICE_UNAVAILABLE'});
 });
 test('stale plans and undo never overwrite intervening edits',async t=>{
  const f=await fixture(t),p=await f.wait(await f.start());await f.alice.edit('paper',1,[{op:'set_title',title:'人工新标题'}]);
@@ -86,6 +100,11 @@ test('oversized output and a provider timeout fail closed',async()=>{
  const pending=inferLayout(config,{},new AbortController().signal,async(_url,{signal})=>new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(signal.reason),{once:true})));
  // Keep the test alive: AbortSignal.timeout uses an unref'ed timer in Node.
  const timer=setTimeout(()=>{},200);try{await assert.rejects(()=>pending,/timeout|timed out/i);}finally{clearTimeout(timer);}
+});
+test('a model response omitting any layout field is rejected even when transport is complete',async()=>{
+ const config=modelConfiguration({model:'x'});
+ const fetcher=async url=>new Response(JSON.stringify(url.endsWith('tags')?{models:[{name:'x',digest:'a'.repeat(64)}]}:{model:'x',done:true,message:{content:JSON.stringify({kind:'proposal',summary:'双栏',patch:{columns:2}})}}));
+ await assert.rejects(()=>inferLayout(config,{},new AbortController().signal,fetcher),/width|height/);
 });
 test('provider rejects remote endpoints, redirects, partial results and changed model identity',async()=>{
  for(const url of ['https://example.com','http://localhost:11434','http://127.0.0.1:11434/other','http://user@127.0.0.1:11434'])assert.throws(()=>modelConfiguration({url,model:'x'}));

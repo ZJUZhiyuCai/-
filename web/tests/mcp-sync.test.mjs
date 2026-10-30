@@ -32,7 +32,11 @@ test('open cannot replace input made during a delayed read or bind a rejected do
 });
 test('a pending save prevents polling from moving the baseline backwards',async()=>{
   let doc={text:'snapshot'},pending=deferred();const c=new ProjectConnection({getDoc:()=>doc,replaceDoc:async d=>{doc=d;},api:async()=>({revision:1,document:doc})});await c.open('book');
-  c.api=()=>pending.promise;const saving=c.save();assert.equal(await c.poll(),false);await assert.rejects(c.save(),/SAVE_IN_PROGRESS/);pending.resolve({revision:2});await saving;assert.equal(c.revision,2);
+  doc={text:'new edit'};c.api=()=>pending.promise;const saving=c.save();assert.equal(await c.poll(),false);await assert.rejects(c.save(),/SAVE_IN_PROGRESS/);pending.resolve({revision:2});await saving;assert.equal(c.revision,2);
+});
+test('saving an unchanged document keeps the reviewed revision and does not issue a write',async()=>{
+ let doc,calls=0;const c=new ProjectConnection({getDoc:()=>doc,replaceDoc:async d=>{doc=d;},api:async()=>{calls++;return {revision:5,document:{text:'reviewed'}};}});
+ await c.open('paper');const result=await c.save();assert.equal(result.unchanged,true);assert.equal(calls,1);assert.equal(c.revision,5);assert.equal(c.dirty,false);
 });
 test('typing while a version restore is pending is retained against the new revision',async()=>{
  let doc={text:'current'},pending=deferred();const c=new ProjectConnection({getDoc:()=>doc,replaceDoc:async d=>{doc=d;},api:async()=>({revision:2,document:doc})});await c.open('book');
@@ -45,5 +49,20 @@ test('a read started before a save cannot roll back the completed save',async()=
  const poll=c.poll();doc.text='saved edit';await c.save();
  reading.resolve({revision:2,document:{text:'stale remote'}});
  assert.equal(await poll,false);assert.equal(doc.text,'saved edit');assert.equal(c.revision,3);assert.equal(c.dirty,false);
+});
+test('unchanged revision polls transfer only metadata, then fetch once when the revision changes',async()=>{
+ let doc,revision=1;const calls=[];
+ const c=new ProjectConnection({getDoc:()=>doc,replaceDoc:async d=>{doc=d;},api:async name=>{calls.push(name);return name==='get_project_status'?{revision}:{revision,document:{text:'revision '+revision}};}});
+ await c.open('paper');calls.length=0;
+ for(let i=0;i<3;i++)assert.equal(await c.poll(),false);
+ assert.deepEqual(calls,['get_project_status','get_project_status','get_project_status']);
+ revision=2;assert.equal(await c.poll(),true);assert.deepEqual(calls.slice(-2),['get_project_status','get_project']);assert.equal(doc.text,'revision 2');
+});
+test('typing during the second-stage document fetch is never replaced',async()=>{
+ let doc={text:'original'},pending=deferred();
+ const c=new ProjectConnection({getDoc:()=>doc,replaceDoc:async d=>{doc=d;},api:async()=>({revision:1,document:doc})});await c.open('paper');
+ c.api=async name=>name==='get_project_status'?{revision:2}:pending.promise;
+ const poll=c.poll();await Promise.resolve();await Promise.resolve();doc.text='manual edit';
+ pending.resolve({revision:2,document:{text:'agent edit'}});assert.equal(await poll,false);assert.equal(doc.text,'manual edit');assert.equal(c.revision,1);
 });
 

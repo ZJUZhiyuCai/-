@@ -8,11 +8,13 @@
 
 ## 使用
 
-登录网站 → 新建图书/学术/竖排项目 → 编辑纸面或组件属性 → 保存到云端 → 下载 JSON 备份或浏览器打印 PDF。云端版本保存最近十次可恢复历史。归档可恢复，不删除文稿。
+登录网站 → 新建学术期刊/图书/A4 论文/竖排项目 → 编辑纸面或组件属性 → 保存到云端 → 下载 JSON 备份或浏览器打印 PDF。云端版本保存最近十次可恢复历史。归档可恢复，不删除文稿。
 
 支持文字样式、章节、1–4 栏、横竖排、奇偶页眉页脚、图片绕排、表格合并、数学公式、注音、脚注尾注、文献引用、批注、目录索引。“打开文稿”中的浏览器 Word 导入仍是有损子集。含公式的期刊请使用新增的“导入期刊 Word”，它需要独立服务器启用 Python/XeLaTeX，保存原始 OMML、导入诊断及对象身份；发现不支持的内容会拒绝新建工程。
 
 期刊工作流：导入 Word → “期刊模板”设置刊名、卷期、日期与字体 → 右侧指定中英文首面角色、图表锚点和题注 → 保存 → “全文期刊 PDF”。浏览器纸面是结构编辑预览；首面、分页、公式换行和锚点验收以服务端全文 PDF 为准。PDF 与报告绑定源修订，刷新后可“取回期刊校样”；文稿变化后拒绝交付旧校样。下载成功不代表可发印。配置、接口及限制见 [全文期刊生产链](docs/journal-production.md)。0.6.0 增加旧 DOC、MathType、矢量与组合图片兼容、明确的接受修订策略，以及期刊自动排版计划；发布与实稿测试见 [0.6.0 验收](../docs/release-0.6.0.md)。
+
+学术期刊模板直接提供中英文首面角色、编号公式、带锚点的三线表和参考文献。模板内容是明确标注的合成示例；实际使用时替换为自己的稿件。[学术排版工作流](docs/journal-workflow.md)说明 AI 提案、人工微调与校样验收的协作方式。
 
 ## 整期与 Word
 
@@ -20,7 +22,7 @@
 
 ## Agent / MCP
 
-当前工作区 `POST /mcp` 提供 98 个工具，与编辑器共享用户隔离的云端工程。Sites 使用发布生成的个人插件，自托管使用 Bearer MCP。`list_projects` → `get_project` → `apply_changes`，修改必须携带 `expectedRevision`，可先使用 `dryRun:true`。所有操作按稳定组件 ID 定位，无 computer-use 依赖。新增期刊工具先调用 `get_journal_capabilities`，只有 `enabled:true` 才能进行原生导入和全文 PDF 编译；Workers 部署不支持本机 TeX。
+当前工作区 `POST /mcp` 提供 108 个工具，与编辑器共享用户隔离的云端工程。Sites 使用发布生成的个人插件，自托管使用 Bearer MCP。`list_projects` → `get_project_context` → `list_components` → `apply_changes`，修改必须携带 `expectedRevision`，可先使用 `dryRun:true`。所有操作按稳定组件 ID 定位，无 computer-use 依赖。新增期刊工具先调用 `get_journal_capabilities`，只有 `enabled:true` 才能进行原生导入和全文 PDF 编译；Workers 部署不支持本机 TeX。
 
 `inspect_journal_docx` 可在创建项目之前检查原稿的修订、公式和图像。125 MP 单帧 TIFF、MTEF/EMF 来源校验与修订策略的整合边界见 [导入链验证](docs/journal-import-integration.md)。
 
@@ -63,4 +65,4 @@ MIT。仅包含独立源代码与声明的第三方依赖，不包含方正程�
 
 ## AI 排版工作台
 
-编辑器默认显示纸面、任务入口与排版助手，完整工具集中在“全部工具”（Ctrl/⌘K），窄窗口按需展开助手。助手默认关闭；独立服务器可配置本机 Ollama。模型只提出受限版式参数建议，经差异核对、显式应用、版本绑定校样及可撤销版本记录完成闭环。配置和真实模型验收见 [AI 排版工作台](docs/ai-workbench.md)。
+期刊编辑器默认打开 Agent 任务面板，完整工具集中在“全部工具”（Ctrl/⌘K）。独立服务器配置本机 Ollama 与期刊引擎后，可连续执行检查、版式应用、PDF 校样和机器检查；人处理例外、审阅结果或整次撤销。后台任务关闭页面仍可继续，外部 Agent 使用同一组任务工具。见 [Agent 工作流](docs/agent-workflow.md)。配置和真实模型验收见 [AI 排版工作台](docs/ai-workbench.md)。

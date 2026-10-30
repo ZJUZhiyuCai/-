@@ -1,6 +1,4 @@
-import {documentFingerprint} from './project-sync.mjs';
-const labels={width:'页面宽度',height:'页面高度',top:'上边距',bottom:'下边距',inner:'内侧边距',outer:'外侧边距',fontSize:'正文字号',lineHeight:'正文行距',columns:'栏数',gap:'栏距'};
-const units={fontSize:' pt',lineHeight:' 倍',columns:' 栏'};
+import {setupAgentTasks} from './agent-task-ui.mjs';
 const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
 const button=(text,fn,cls)=>{const b=el('button',text,cls);b.type='button';b.onclick=fn;return b;};
 const messages={LAYOUT_ASSISTANT_UNAVAILABLE:'当前服务器尚未配置排版助手。',ASSISTANT_BUSY_RETRY:'另一项建议正在生成，请稍后重试。',ASSISTANT_COMPOSITION_NOT_SUPPORTED:'自由版面请使用精确排版工具；当前助手支持流式与期刊版式。',REVISION_CONFLICT:'文稿版本已变化，请重新生成建议。',PLAN_NOT_REVIEWABLE:'这份建议已处理，不能重复应用。',PLAN_NOT_APPLIED:'当前没有可撤销的助手修改。',MODEL_INCOMPLETE_RESPONSE:'模型没有完整返回建议，请重试。',ASSISTANT_MODEL_NOT_INSTALLED:'排版模型尚未准备好，请联系部署管理员。'};
@@ -103,7 +101,7 @@ export function setupWorkbench({getDoc,connection,fit}){
  const foot=el('div',undefined,'command-foot');foot.setAttribute('aria-hidden','true');
  for(const [k,t] of [['↑↓','选择'],['Enter','执行'],['Esc','关闭']]){const s=el('span');s.append(el('kbd',k),t);foot.append(s);}
  dialog.append(dialogHead,searchBox,commandBody,empty,foot);document.body.append(dialog);
- const viewCommands=[['文稿结构',()=>{if(!compMode)setDock('left',true,{focus:true});}],['版式设置',()=>showProps('layout',true)],['当前段落属性',()=>showProps('block',true)],['排版助手',()=>showProps('assistant',true)]].map(([text,fn])=>button(text,fn));
+ const viewCommands=[['文稿结构',()=>{if(!compMode)setDock('left',true,{focus:true});}],['版式设置',()=>showProps('layout',true)],['当前段落属性',()=>showProps('block',true)],['Agent 任务',()=>showProps('assistant',true)]].map(([text,fn])=>button(text,fn));
  const registry=[...commands.map(node=>({node,group:node.id==='help'?'帮助':commandGroup(node.textContent)})),...viewCommands.map(node=>({node,group:'视图'}))];
  for(const group of ['文稿','插入','版式','校样','批改','高级','视图','帮助']){
   const items=registry.filter(x=>x.group===group);if(!items.length&&group!=='文稿')continue;
@@ -168,9 +166,10 @@ export function setupWorkbench({getDoc,connection,fit}){
  if(cloudSave){cloudSave.textContent='保存';cloudSave.classList.remove('primary');cloudSave.classList.add('wb-save');cloudSave.title=`保存到云端 · ${keys('Mod+S')}`;cloudSave.setAttribute('aria-keyshortcuts',ariaKeys('Mod+S'));actions.append(cloudSave);}
  const proofButton=button('出校样',()=>runProof(),'primary wb-proof');
  const toolsButton=iconButton('grid','工具',()=>openCommands(''),'wb-tools');toolsButton.append(el('kbd',keys('Mod+K')));toolsButton.title=`全部工具 · ${keys('Mod+K')}`;toolsButton.setAttribute('aria-keyshortcuts',ariaKeys('Mod+K'));toolsButton.setAttribute('aria-haspopup','dialog');
- const panelToggle=iconButton('panel','属性',()=>toggleDock('right'),'wb-toggle');panelToggle.title='版式、段落与排版助手';
+ const panelToggle=iconButton('panel','属性',()=>toggleDock('right'),'wb-toggle');panelToggle.title='Agent 任务、版式与段落';
  const progress=el('div',undefined,'wb-progress');progress.setAttribute('aria-hidden','true');
- actions.append(proofButton,toolsButton,panelToggle);
+ const assistantEntry=button('Agent 任务',()=>showProps('assistant',true),'wb-tools wb-assistant-entry');
+ actions.append(assistantEntry,proofButton,toolsButton,panelToggle);
  header.append(...[back,titleBlock,actions,progress].filter(Boolean));
  body.prepend(header);
 
@@ -193,7 +192,7 @@ export function setupWorkbench({getDoc,connection,fit}){
  const compPanel=document.querySelector('.composition-inspector');if(compPanel)compView.append(compPanel);
  const panel=el('section',undefined,'assistant-panel');panel.id='layoutAssistant';
  const tabs={};
- for(const [key,text,target,combo] of [['layout','版式',$('layoutPanel'),'Alt+2'],['block','段落',$('blockPanel'),'Alt+3'],['composition','页面',compView,'Alt+2'],['assistant','助手',panel,'Alt+4']]){
+ for(const [key,text,target,combo] of [['assistant','Agent',panel,'Alt+4'],['layout','版式',$('layoutPanel'),'Alt+2'],['block','段落',$('blockPanel'),'Alt+3'],['composition','页面',compView,'Alt+2']]){
   const tab=button(text,()=>{setView(key);if(!compMode)remember({view});},'wb-tab');tab.id='wbTab-'+key;tab.setAttribute('role','tab');tab.setAttribute('aria-controls',target.id);tab.title=`${text} · ${keys(combo)}`;
   target.setAttribute('role','tabpanel');target.setAttribute('aria-labelledby',tab.id);tabs[key]=tab;tablist.append(tab);
  }
@@ -361,110 +360,25 @@ export function setupWorkbench({getDoc,connection,fit}){
  layoutPanel.addEventListener('change',()=>setTimeout(drawSpread));
  spreadBox.addEventListener('click',e=>{const k=e.target.closest?.('[data-field]')?.dataset.field.split(' ')[0],input=k&&layoutPanel.querySelector(`[data-layout="${k}"]`);if(input){input.focus();input.select?.();}});
 
- // —— 排版助手
- const steps=el('ol',undefined,'assistant-steps');steps.setAttribute('aria-label','助手进度');steps.hidden=true;
- const stepItems=['提出要求','核对差异','应用并看校样'].map((text,i)=>{const li=el('li');li.append(el('span',String(i+1).padStart(2,'0'),'assistant-step-index'),el('span',text));steps.append(li);return li;});
- const form=el('form'),prompt=el('textarea');prompt.rows=3;prompt.maxLength=1200;prompt.placeholder='例如：内外边距改为 25 毫米，正文行距设为 1.6 倍';prompt.setAttribute('aria-label','排版要求');
- const ideaRow=el('div',undefined,'assistant-ideas');ideaRow.setAttribute('role','group');ideaRow.setAttribute('aria-label','常用要求');
- const ideas=[['边距 25 mm','内外边距改为 25 毫米'],['双栏','正文改为双栏'],['字号 9 pt','正文字号设为 9 pt'],['行距 1.6','正文行距设为 1.6 倍']].map(([text,phrase])=>{
-  const b=button(text,()=>{const v=prompt.value.trim().replace(/[，,。；;、]+$/,''),next=v?`${v}，${phrase}`:phrase;if(next.length<=prompt.maxLength)prompt.value=next;prompt.focus();prompt.setSelectionRange(prompt.value.length,prompt.value.length);},'assistant-idea');
-  b.title=phrase;ideaRow.append(b);return b;
- });
- const submit=el('button','生成建议','primary');submit.type='submit';const promptActions=el('div',undefined,'assistant-form-actions');promptActions.append(submit);
- const availability=el('p','正在连接助手…','assistant-hint assistant-availability');form.append(prompt,ideaRow,promptActions,availability);
- const editRequest=button('调整要求',()=>{form.hidden=!form.hidden;editRequest.textContent=form.hidden?'调整要求':'收起要求';editRequest.setAttribute('aria-expanded',String(!form.hidden));if(!form.hidden)prompt.focus();},'assistant-edit-request');editRequest.hidden=true;
- const notice=el('p','', 'assistant-notice');notice.setAttribute('role','status');
- const result=el('section',undefined,'assistant-result');result.setAttribute('aria-label','排版建议');result.hidden=true;
- const scope=el('p','可调整页边距、分栏、字号与行距。正文和公式保持原样。','assistant-scope');
- panel.append(steps,editRequest,form,notice,result,scope);
- prompt.addEventListener('keydown',e=>{if(e.key==='Enter'&&modKey(e)){e.preventDefault();if(!submit.disabled)form.requestSubmit(submit);}});
- prompt.title=`${keys('Mod+Enter')} 生成建议`;
- let enabled=false,busy=false,plan=null,applyButton,undoButton,pollGeneration=0,proofBusy=false,compactedPlanId,trackedProject=connection.projectId;
- const planKey=()=>`shuye-layout-plan-${connection.projectId}`;
- const api=(name,args={})=>connection.api(name,args);
- const tell=(text,error=false)=>{notice.textContent=text;notice.classList.toggle('error',error);};
- const clean=()=>!!connection.projectId&&!connection.dirty;
- const identity=()=>({projectId:plan.projectId,planId:plan.planId});
+ // —— Agent 连续任务：人下达目标、接管例外、审阅校样。
+ let proofBusy=false,agentRunning=false;
  function sync(){
-  const d=getDoc();
-  route.textContent=compMode?'自由版面':d.journal?'期刊':'流式文稿';route.dataset.mode=compMode?'composition':d.journal?'journal':'flow';
-  // 流式文稿是默认形态，不再额外标注；只有期刊与自由版面需要提示。
-  route.hidden=!compMode&&!d.journal;
+  const d=getDoc();route.textContent=compMode?'自由版面':d.journal?'期刊':'流式文稿';route.dataset.mode=compMode?'composition':d.journal?'journal':'flow';route.hidden=!compMode&&!d.journal;
   if(modeReturn)modeReturn.hidden=!compMode;
-  proofButton.textContent=proofBusy?'正在生成…':d.journal&&!d.composition?'生成校样':'校样 / 输出';
-  submit.disabled=!enabled||busy||!connection.projectId||!!d.composition;submit.textContent=busy?'正在生成…':connection.dirty?'保存并生成建议':'生成建议';
-  for(const idea of ideas)idea.disabled=!!d.composition;
-  if(applyButton)applyButton.disabled=busy||connection.writing||!clean()||plan?.stale||connection.projectId!==plan?.projectId||connection.revision!==plan?.revision;
-  if(undoButton)undoButton.disabled=busy||connection.writing||!clean()||connection.projectId!==plan?.projectId||connection.revision!==plan?.appliedRevision;
+  const proofState=connection.journalUI?.proofState?.(),proofLabel=proofState==='ready'?'查看校样':proofState==='stale'?'更新校样':proofState==='running'?'取回校样':'生成校样';
+  proofButton.textContent=proofBusy?'正在处理…':d.journal&&!d.composition?proofLabel:'校样 / 输出';
+  proofButton.disabled=proofBusy||agentRunning;
   pdfChip.hidden=!d.journal||compMode;if(previewNote)pdfChip.title=previewNote.textContent;
-  if(cloudSave){const dirty=!!connection.dirty;cloudSave.classList.toggle('is-dirty',dirty);cloudSave.setAttribute('aria-label',dirty?'保存，有未保存的修改':'保存');}
+  if(cloudSave){cloudSave.classList.toggle('is-dirty',!!connection.dirty);cloudSave.setAttribute('aria-label',connection.dirty?'保存，有未保存的修改':'保存');}
  }
- async function saved(){if(!connection.projectId)throw Error('请先保存文稿，再使用助手。');if(connection.dirty)await connection.save();if(connection.dirty)throw Error('保存期间有新输入，请再次生成建议。');}
- async function run(fn){if(busy)return;busy=true;sync();try{await fn();}catch(e){tell(messages[e.message]||e.message,true);}finally{busy=false;sync();}}
- function planPreview(changes){
-  const base=getDoc().layout||{},before={...base},after={...base},changed=new Set();
-  for(const c of changes){if(!(c.field in labels))continue;const a=Number(c.before),b=Number(c.after);if(!Number.isFinite(a)||!Number.isFinite(b))continue;before[c.field]=a;after[c.field]=b;changed.add(c.field);}
-  if(!changed.size)return null;
-  const k=Math.min(118/Math.max(Number(before.width)||185,Number(after.width)||185),150/Math.max(Number(before.height)||260,Number(after.height)||260));
-  const figure=el('figure',undefined,'assistant-preview');figure.setAttribute('aria-hidden','true');
-  for(const [layout,text,marks] of [[before,'原',null],[after,'新',changed]]){const page=el('div',undefined,'assistant-preview-page');page.append(spread(layout,{single:true,changed:marks,scale:k}),el('span',text));figure.append(page);}
-  return figure;
- }
- function draw(){
-  result.replaceChildren();applyButton=undoButton=null;
-  editRequest.hidden=!plan;
-  if(plan&&plan.status!=='running'&&plan.planId!==compactedPlanId){compactedPlanId=plan.planId;form.hidden=true;editRequest.textContent='调整要求';editRequest.setAttribute('aria-expanded','false');}
-  steps.hidden=!plan;
-  const status=plan?.status,current=status==='review'||status==='running'?1:status==='applied'?2:0;
-  stepItems.forEach((li,i)=>{li.dataset.state=i<current?'done':i===current?'current':'todo';if(i===current)li.setAttribute('aria-current','step');else li.removeAttribute('aria-current');});
-  steps.dataset.busy=String(status==='running');tabs.assistant.dataset.state=status||'';
-  result.hidden=!plan;
-  if(!plan)return;
-  const names={running:'正在拟定版式',review:'待你核对',applied:'已应用',undone:'已撤销',failed:'建议生成失败',cancelled:'已取消',unsupported:'需要调整要求'};
-  const head=el('div',undefined,'assistant-result-head');head.append(el('h3',names[plan.status]||plan.status),el('span',`基于文稿 r${plan.revision}`,'assistant-revision'));result.append(head);
-  if(plan.summary)result.append(el('p',plan.summary));
-  if(plan.error)result.append(el('p',messages[plan.error]||plan.error,'error'));
-  if(plan.changes?.length){
-   const table=el('table',undefined,'assistant-diff'),headRow=el('tr');
-   for(const text of ['参数','原来','建议']){const th=el('th',text);th.scope='col';headRow.append(th);}table.append(headRow);
-   for(const c of plan.changes){const row=el('tr'),th=el('th',labels[c.field]||c.field);th.scope='row';row.append(th,el('td',String(c.before)+(units[c.field]??' mm')),el('td',String(c.after)+(units[c.field]??' mm')));table.append(row);}
-   result.append(table);const preview=planPreview(plan.changes);if(preview)result.append(preview);
-  }
-  if(plan.stale)result.append(el('p','文稿版本已变化，请重新生成建议。','error'));
-  else if(connection.dirty)result.append(el('p','有尚未保存的修改，当前建议暂不能应用。请保存后重新生成。','assistant-hint'));
-  const planActions=el('div',undefined,'assistant-plan-actions');
-  if(plan.status==='running')planActions.append(button('取消生成',async()=>{try{plan=await api('cancel_layout_plan',identity());draw();}catch(e){tell(e.message,true);}}));
-  if(plan.status==='review'){applyButton=button(`应用这 ${plan.changes.length} 项修改`,()=>mutate('apply_layout_plan'),'primary');planActions.append(applyButton);}
-  if(plan.status==='applied'){
-   planActions.append(button('生成校样',()=>runProof(true),'primary'));undoButton=button('撤销本次修改',()=>mutate('undo_layout_plan'));planActions.append(undoButton);
-   result.append(el('p',`已保存为 r${plan.appliedRevision} · 请核对新校样`,'assistant-hint'));
-  }
-  if(plan.status==='undone')result.append(el('p',`已恢复原版式，当前 r${plan.undoneRevision}。`));
-  result.append(planActions);sync();
- }
- async function poll(generation){while(plan?.status==='running'&&generation===pollGeneration){await new Promise(r=>setTimeout(r,1200));if(generation!==pollGeneration)return;const args=identity(),next=await api('get_layout_plan',args);if(generation!==pollGeneration||connection.projectId!==args.projectId)return;plan=next;draw();}if(generation===pollGeneration&&plan?.status==='review')tell('参数预检已通过。请核对差异，再应用。');}
- form.onsubmit=e=>{e.preventDefault();if(!prompt.value.trim())return;tell('');run(async()=>{
-  const generation=++pollGeneration;await saved();const projectId=connection.projectId,started=await api('start_layout_plan',{projectId,expectedRevision:connection.revision,instruction:prompt.value.trim()});
-  try{localStorage.setItem(`shuye-layout-plan-${projectId}`,started.planId);}catch{}
-  if(generation!==pollGeneration||connection.projectId!==projectId)return;plan=started;draw();await poll(generation);
- });};
- async function mutate(tool){await run(async()=>{
-  if(!clean()||connection.projectId!==plan.projectId)throw Error('请先处理本地修改，再重新生成建议。');
-  const before=documentFingerprint(getDoc()),projectId=connection.projectId;connection.busy=true;
-  try{
-   const next=await api(tool,{...identity(),expectedRevision:connection.revision});
-   if(connection.projectId!==projectId){tell('处理结果已保留在原工程中。');return;}plan=next;
-   if(documentFingerprint(getDoc())!==before){tell('云端已处理；操作期间的新输入已保留，请先备份再打开云端版本。',true);draw();return;}
-   if(await connection.open(projectId)===false)throw Error('已切换工程；处理结果保留在原工程中。');draw();tell(tool==='apply_layout_plan'?'已应用并保存。现在可以生成校样。':'已撤销本次修改，原版式已恢复。');
-  }finally{connection.busy=false;}
- });}
- async function runProof(fromAssistant=false){
+ setupAgentTasks({panel,connection,getDoc,notify,onState:task=>{agentRunning=task?.status==='running';proofButton.disabled=proofBusy||agentRunning;tabs.assistant.dataset.state=task?.status||'';assistantEntry.textContent=task?.status==='running'?'Agent 执行中':'Agent 任务';}});
+ async function runProof(){
   if(proofBusy)return;
   if(!getDoc().journal||getDoc().composition){openCommands('校样','校样与输出');return;}
-  const say=(text,tone,sticky=false)=>{notify(text,tone,sticky);if(fromAssistant)tell(text,tone==='error');};
+  const say=(text,tone,sticky=false)=>notify(text,tone,sticky);
   proofBusy=true;proofButton.disabled=true;proofButton.setAttribute('aria-busy','true');body.classList.add('wb-proofing');sync();
-  say('正在生成当前版本的期刊校样…','progress',true);
-  try{const proof=await connection.journalUI.generateProof(),blocked=proof.report?.quality?.status==='BLOCKED';say(`校样 r${proof.revision} 已生成：${proof.pages} 页，PDF 与检查报告已下载。${blocked?'存在质量阻断，请查看报告。':'请核对实际页面。'}`,blocked?'warn':'ok',blocked);}
+  say(connection.journalUI.proofState?.()==='ready'?'正在取回当前修订的校样…':'正在准备当前版本的期刊校样…','progress',true);
+  try{const proof=await connection.journalUI.generateProof(),blocked=proof.report?.quality?.status==='BLOCKED';say(`校样 r${proof.revision} · ${proof.pages} 页。${blocked?'存在质量阻断，请查看报告。':'请核对 PDF 实际页面。'}`,blocked?'warn':'ok',blocked);}
   catch(e){say(messages[e.message]||e.message,'error');}
   finally{proofBusy=false;proofButton.disabled=false;proofButton.removeAttribute('aria-busy');body.classList.remove('wb-proofing');sync();}
  }
@@ -501,15 +415,14 @@ export function setupWorkbench({getDoc,connection,fit}){
  });
 
  document.addEventListener('shuye:document-changed',()=>queueMicrotask(()=>{sync();fit();drawSpread();}));
- document.addEventListener('shuye:connection-changed',()=>{if(trackedProject!==connection.projectId){trackedProject=connection.projectId;pollGeneration++;plan=null;compactedPlanId=null;form.hidden=false;editRequest.setAttribute('aria-expanded','true');tell('');draw();}else if(plan){plan.stale=connection.revision!==(plan.status==='applied'?plan.appliedRevision:plan.status==='undone'?plan.undoneRevision:plan.revision);draw();}sync();fit();});
+ document.addEventListener('shuye:proof-changed',sync);
+ document.addEventListener('shuye:connection-changed',()=>{sync();fit();});
  const observer=new ResizeObserver(()=>{if(zoomSelect.value==='fit')fit();});observer.observe(canvas);
 
  body.classList.toggle('wb-composition',compMode);outlineToggle.hidden=compMode;
- setView(compMode?'composition':['layout','block','assistant'].includes(store.view)?store.view:'layout');
+ setView(compMode?'composition':getDoc().journal?'assistant':['layout','block'].includes(store.view)?store.view:'layout');
  setDock('left',!isOverlay('left')&&wideLeft(),{persist:false});
  setDock('right',!isOverlay('right')&&(store.right??true),{persist:false});
- draw();sync();fit();paintState();paintZoom();trackPage();
- api('get_layout_assistant').then(c=>{enabled=c.enabled;availability.textContent=enabled?'建议由本机模型生成，应用前均需核对。':'排版助手尚未配置，仍可使用全部编辑工具。';availability.dataset.state=enabled?'on':'off';sync();}).catch(()=>{availability.textContent='暂时无法连接助手；编辑工具仍可使用。';availability.dataset.state='error';});
- try{const planId=localStorage.getItem(planKey()),projectId=connection.projectId,generation=pollGeneration;if(planId)api('get_layout_plan',{projectId,planId}).then(async p=>{if(busy||generation!==pollGeneration||connection.projectId!==projectId)return;plan=p;prompt.value=p.instruction;draw();if(p.status==='running')await run(()=>poll(++pollGeneration));}).catch(()=>{});}catch{}
+ sync();fit();paintState();paintZoom();trackPage();
  return {openCommands};
 }

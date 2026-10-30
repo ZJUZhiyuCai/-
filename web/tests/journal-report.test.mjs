@@ -26,7 +26,7 @@ function fakeDom(t){
  const previous=Object.getOwnPropertyDescriptor(globalThis,'document');
  t.after(()=>{if(previous)Object.defineProperty(globalThis,'document',previous);else delete globalThis.document;});
  const nodes=[];
- function element(tag){const n={tag,style:{},children:[],textContent:'',append(...items){this.children.push(...items);},showModal(){this.open=true;},close(){this.open=false;this.onclose?.();},remove(){this.removed=true;}};Object.defineProperty(n,'innerHTML',{set(){throw Error('untrusted HTML');}});nodes.push(n);return n;}
+ function element(tag){const n={tag,style:{},children:[],textContent:'',attributes:{},setAttribute(k,v){this.attributes[k]=v;},append(...items){this.children.push(...items);},showModal(){this.open=true;},close(){this.open=false;this.onclose?.();},remove(){this.removed=true;}};Object.defineProperty(n,'innerHTML',{set(){throw Error('untrusted HTML');}});nodes.push(n);return n;}
  globalThis.document={createElement:element,body:element('body')};
  return nodes;
 }
@@ -36,8 +36,15 @@ test('report shows physical pages, candidates, revision and untrusted text as te
   {severity:'error',code:'TEX_MISSING_GLYPH',message:'字体缺字：啟',compilerMessage:payload,sourceLocations:[{objectId:'ref',pages:[12,12],excerpt:payload}]},
   {severity:'warning',code:'JOURNAL_METADATA_REVIEW',message:'出版日期待确认'}]}}});
  const text=nodes.map(n=>n.textContent).join('\n');
- assert.match(text,/1 项阻断/);assert.match(text,/修订 7/);assert.match(text,/PDF 第 12 页/);assert.match(text,/候选来源/);assert.match(text,/字体缺字：啟/);assert.ok(text.includes(payload));assert.match(text,/自动检查不等于可发印/);assert.equal(dialog.open,true);
+ assert.match(text,/1 项阻断/);assert.match(text,/r7/);assert.match(text,/PDF 第 12 页/);assert.match(text,/候选来源/);assert.match(text,/字体缺字：啟/);assert.ok(text.includes(payload));assert.match(text,/自动检查不等于可发印/);assert.equal(dialog.open,true);
  nodes.find(n=>n.tag==='button').onclick();assert.equal(dialog.removed,true);
+});
+test('proof metrics come from the report and PDF actions remain explicit',t=>{
+ const nodes=fakeDom(t),called=[];
+ const dialog=showJournalReport({revision:3,pages:2,report:{fonts:[{embedded:true},{embedded:false}],formulaCoverage:{total:6},semanticLayout:{sourceObjectCoverage:{mapped:28,expected:29}},quality:{diagnostics:[]}}},{openPdf:()=>called.push('open'),downloadPdf:()=>called.push('pdf'),downloadReport:()=>called.push('report')});
+ assert.deepEqual(called,[]);assert.equal(dialog.attributes['aria-labelledby'],'proofTitle');
+ const text=nodes.map(n=>n.textContent).join('\n');assert.match(text,/1 \/ 2/);assert.match(text,/28 \/ 29/);assert.match(text,/待人工验收/);
+ nodes.find(n=>n.textContent==='打开 PDF 校样').onclick();assert.deepEqual(called,['open']);
 });
 test('changing a light-weight source-han profile requires an explicit compatible weight',t=>{
  const nodes=fakeDom(t),d={layout:{fontSet:'source-han'},journal:{bodyWeight:'light'},blocks:[{role:'title-zh'}]},before=structuredClone(d),messages=[];let open;

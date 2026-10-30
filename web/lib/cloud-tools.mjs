@@ -1,6 +1,8 @@
 import {addJournalTools} from './journal-tools.mjs';
 import {addIssueTools} from './issue-tools.mjs';
+import {addAgentTools} from './agent-tools.mjs';
 import {addAssistantTools} from './assistant-tools.mjs';
+import {documentContext} from './project-context.mjs';
 import {inspectFounderFfx} from './founder-ffx.mjs';
 import fontkit from '@pdf-lib/fontkit';
 import {paginateStory} from '../public/editor/src/auto-flow.mjs';
@@ -18,6 +20,7 @@ export function createCloudTools(store){
   const tools=[];const obj=s=>z.object(s).strict();const add=(name,description,schema,run,readOnly=false)=>tools.push({name,description,schema,run,readOnly});
   addIssueTools(add,store);
   addAssistantTools(add,store);
+  addAgentTools(add,store);
   add('get_capabilities','查看网页端实际能力与限制。',obj({}),()=>({version:'0.7.0',documentVersions:[1,2,3,4],transport:'HTTP',components:['paragraph','heading','image','table','equation','toc','index','pageBreak'],composition:{objects:['text','image','rect'],threadedStories:true,nestedMasters:true,sectionMasterRules:true,perPageOverrides:true,richText:true,unequalColumns:true,verticalFlow:true,polygonFrames:true,rectangularExclusions:true,autoPagination:true,masterContentSlots:true,sectionPageNumbering:true,crossFrameTables:true,splitMergedRows:true,repeatedTableHeaders:true,footnoteContinuation:true,endnotes:true,richFrameConstraint:'horizontal rectangular equal column measure'},cloudStorage:true,history:10,docxImport:{basicOnly:!store?.journalRuntime?.capabilities.enabled,unsupportedContent:'reject-before-replacement',omml:!!store?.journalRuntime?.capabilities.enabled,journalTool:'import_journal_docx'},pdfExportScope:store?.journalRuntime?.capabilities.enabled?'composition-or-complete-journal':'composition-only',journal:store?.journalRuntime?.capabilities||{enabled:false},limits:{documentBytes:20971520,projects:200},limitations}),true);
   add('inspect_founder_pdml','检查真实飞翔 PDML XML 的页面、母版、对象、文字流引用及未支持特性；分页读取，不导入、不改变工程，不访问外部资源。',obj({xml:z.string().max(2000000),offset:z.number().int().nonnegative().default(0),limit:z.number().int().min(1).max(100).default(50)}),a=>inspectFounderPdml(a.xml,a),true);
   add('inspect_founder_ffx','只读检查已观察到的 FFX 旧版头与对象记录。未知类型/版本停止，不猜测跳过，不代表可编辑导入或完整兼容。',obj({base64:z.string().max(11200000).regex(/^[A-Za-z0-9+/]+={0,2}$/)}),a=>inspectFounderFfx(Uint8Array.from(atob(a.base64),c=>c.charCodeAt(0))),true);
@@ -33,6 +36,8 @@ export function createCloudTools(store){
   add('list_projects','列出当前登录用户的云端工程。',obj({}),async()=>({projects:await store.list()}),true);
   add('create_project','创建工程。稳定 projectId；同名禁止覆盖。',projectInput,a=>store.create(a.projectId,a.document||{format:'open-typesetter',version:2,title:a.title||a.projectId,blocks:[]}));
   add('get_project','读取源工程与当前修订号。',obj({projectId:id}),a=>store.get(a.projectId),true);
+  add('get_project_status','轻量读取工程修订与归档状态，不加载文稿或图片。适用于同步轮询。',obj({projectId:id}),a=>store.status(a.projectId),true);
+  add('get_project_context','先读取文稿结构、版式、期刊角色缺口与操作入口；省略图片数据和长正文。章节分页，详细内容使用 list_components。',obj({projectId:id,offset:z.number().int().nonnegative().default(0),limit:z.number().int().min(1).max(80).default(40)}),async a=>{const r=await store.get(a.projectId);return {projectId:a.projectId,revision:r.revision,...documentContext(r.document,a)};},true);
   add('get_document_schema','完整模型 schema、单位和引用标记。',obj({}),()=>({schema:jsonSchema(),units:{page:'mm',fontSize:'pt',offset:'UTF-16, grapheme boundaries'},references:{note:'[^id]',citation:'[[cite:id]]',component:'[[ref:id]]'},limitations}),true);
   add('get_outline','列出章节及其子树组件 ID。',obj({projectId:id}),async a=>{const r=await store.get(a.projectId);return {revision:r.revision,chapters:outline(r.document)};},true);
   add('list_components','分页读取组件；隐藏图片数据。',obj({projectId:id,offset:z.number().int().nonnegative().default(0),limit:z.number().int().min(1).max(200).default(50)}),async a=>{const r=await store.get(a.projectId);return {revision:r.revision,total:r.document.blocks.length,blocks:r.document.blocks.slice(a.offset,a.offset+a.limit).map(({src,...b})=>({...b,...(src?{imageBytesApprox:Math.floor(src.length*.75)}:{})}))};},true);
@@ -59,4 +64,4 @@ export function createCloudTools(store){
   return tools;
 }
 export async function callTool(store,name,args){const t=createCloudTools(store).find(t=>t.name===name);if(!t)throw Error('UNKNOWN_TOOL');return t.run(t.schema.parse(args??{}));}
-export function toolList(){return createCloudTools(null).map(t=>({name:t.name,description:t.description+' MCP 可设 responseMode=summary 返回元数据，避免整份图片/PDF；正文分页用 list_components。full 返回完整数据。',inputSchema:z.toJSONSchema(t.schema.extend({responseMode:z.enum(['full','summary']).optional()})),annotations:{readOnlyHint:t.readOnly,destructiveHint:!t.readOnly,idempotentHint:t.readOnly,openWorldHint:false}}));}
+export function toolList(){return createCloudTools(null).map(t=>({name:t.name,description:t.description+' MCP 可设 responseMode=summary 返回元数据，避免整份图片/PDF；正文分页用 list_components。full 返回完整数据。',inputSchema:z.toJSONSchema(t.schema.extend({responseMode:z.enum(['full','summary']).optional()})),annotations:{readOnlyHint:t.readOnly,destructiveHint:!t.readOnly,idempotentHint:t.readOnly||['start_agent_task','cancel_agent_task'].includes(t.name),openWorldHint:false}}));}
