@@ -18,6 +18,17 @@ def fixture(kind='image'):
 
 
 class FigureAssetsTests(unittest.TestCase):
+    def test_proof_keeps_unresolved_editorial_comments_and_original_import_evidence(self):
+        doc=fixture();doc['comments']=[{'id':'c','blockId':'asset','text':'Need original image','resolved':False}]
+        doc['importReports']=[{'sourceSha256':'a'*64,'diagnostics':[{'code':'DOCX_FIGURE_CONTENT_MISSING','severity':'warning','message':'Original had no images'}]}]
+        out=BytesIO();pdf=PdfWriter();pdf.add_blank_page(200,300);pdf.write(out)
+        def issues():return inspect_output({'pdf':out.getvalue(),'report':{}},doc)['report']['quality']['diagnostics']
+        self.assertTrue(any(d['code']=='EDITORIAL_COMMENT_UNRESOLVED' and d['blockId']=='asset' for d in issues()))
+        self.assertEqual(next(d for d in issues() if d['code']=='DOCX_FIGURE_CONTENT_MISSING')['severity'],'info')
+        self.assertEqual(doc['importReports'][0]['diagnostics'][0]['severity'],'warning')
+        doc['comments'][0]['resolved']=True
+        self.assertFalse(any(d['code']=='EDITORIAL_COMMENT_UNRESOLVED' for d in issues()))
+
     def test_explicit_reference_is_not_a_missing_caption_in_both_export_paths(self):
         for kind in ('image', 'table'):
             for prefix in ('图1', '图 1', '图\u30001'):

@@ -71,6 +71,9 @@ def inspect_output(output, document=None, compilation=None):
         canonical=json.dumps(document,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')
         report['renderedDocumentSha256']=hashlib.sha256(canonical).hexdigest()
     diagnostics=[dict(d,sourceSha256=r['sourceSha256']) for r in document.get('importReports',[]) for d in r['diagnostics']]
+    diagnostics[:0]=[{'code':'EDITORIAL_COMMENT_UNRESOLVED','severity':'warning','message':c['text'],'blockId':c.get('blockId'),'commentId':c['id']} for c in document.get('comments',[]) if not c.get('resolved')]
+    if not missing_figures(document) and any(b.get('type')=='image' for b in document.get('blocks',[])):
+        diagnostics=[dict(d,severity='info',message='原稿未嵌入图体；当前图题已关联图件，请核对图件来源与清晰度。') if d['code']=='DOCX_FIGURE_CONTENT_MISSING' else d for d in diagnostics]
     diagnostics.extend(report['geometry']['outside'])
     diagnostics.extend(report.get('semanticLayout',{}).get('diagnostics',[]))
     diagnostics.extend(report['compileDiagnostics'])

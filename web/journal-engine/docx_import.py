@@ -23,10 +23,17 @@ def import_docx(data,revision_policy='require-clean'):
     if len(data)>20*1024*1024: raise ValueError('DOCX 不得超过 20 MB。')
     if data.startswith(bytes.fromhex('d0cf11e0a1b11ae1')):
         from word_compat import legacy_docx
-        result=import_docx(legacy_docx(data),revision_policy)
+        from legacy_text import repair_converted_docx
+        converted,repairs=repair_converted_docx(data,legacy_docx(data))
+        result=import_docx(converted,revision_policy)
         report=result['importReports'][0]
         converted_hash=report['sourceSha256'];report['sourceSha256']=hashlib.sha256(data).hexdigest();report['sourceBytes']=len(data)
         report['counts']['convertedLegacyDoc']=1
+        report['counts']['recoveredCharacters']=sum(r['characters'] for r in repairs)
+        if repairs:
+            report['diagnostics'].append({'code':'LEGACY_TEXT_RECOVERED','severity':'warning','message':'独立核对 DOC 正文及表格文本，恢复转换遗漏的 '+str(len(repairs))+' 处字符；请核对校样。原稿未修改。'})
+            for repair in repairs:
+                report['diagnostics'].append({'code':'LEGACY_TEXT_RECOVERY_EVIDENCE','severity':'info','sourcePart':'WordDocument','sourcePath':'cp:'+str(repair['sourceCp']),'message':'恢复原稿字符：'+repair['text']})
         report['diagnostics'].append({'code':'LEGACY_DOC_CONVERTED','severity':'warning','message':'DOC 经隔离 LibreOffice 转为 DOCX；转换中间件 SHA-256：'+converted_hash+'。原稿摘要保持不变。'})
         return result
     warnings = ['Word 导入保留可支持的内容结构；原分页、字体替代、浮动定位和复杂表格需核对。']

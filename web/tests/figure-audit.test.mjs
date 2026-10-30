@@ -14,6 +14,16 @@ test('adding image and caption ownership clears live missing-asset errors withou
  assert.deepEqual(figureGroups(document)[0].captionIds,['note','zh','en']);
  document.blocks.unshift({id:'img',type:'image',captionIds:['note','zh','en']});
  assert.deepEqual(figureDiagnostics(document),[]);assert.equal(documentDiagnostics(document).filter(d=>d.severity==='error').length,0);
+ assert.equal(documentDiagnostics(document).find(d=>d.code==='DOCX_FIGURE_CONTENT_MISSING').severity,'info');
+ assert.equal(document.importReports[0].diagnostics[0].severity,'warning');
+ document.blocks.push(p('missing','图2 未提供图件'));
+ assert.equal(documentDiagnostics(document).find(d=>d.code==='DOCX_FIGURE_CONTENT_MISSING').severity,'warning');
+});
+
+test('unresolved editorial comments remain actionable until explicitly resolved',()=>{
+ const document={blocks:[p('body','text')],comments:[{id:'c',blockId:'body',text:'Check source',resolved:false}]};
+ assert.deepEqual(documentDiagnostics(document),[{code:'EDITORIAL_COMMENT_UNRESOLVED',severity:'warning',message:'Check source',blockId:'body',commentId:'c'}]);
+ document.comments[0].resolved=true;assert.deepEqual(documentDiagnostics(document),[]);
 });
 test('adjacent unlinked images are distinguished from absent images',()=>{
  const document={blocks:[{id:'img',type:'image'},p('c','图1 测试')]};

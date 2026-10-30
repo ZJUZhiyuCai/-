@@ -404,7 +404,7 @@ export function setupWorkbench({getDoc,getSelected=()=>null,select=()=>{},connec
   pdfChip.hidden=!d.journal||compMode;if(previewNote)pdfChip.title=previewNote.textContent;
   if(cloudSave){cloudSave.classList.toggle('is-dirty',!!connection.dirty);cloudSave.setAttribute('aria-label',connection.dirty?'保存，有未保存的修改':'保存');}
  }
- setupAgentTasks({panel,connection,getDoc,notify,onState:task=>{agentRunning=task?.status==='running';proofButton.disabled=proofBusy||agentRunning;tabs.assistant.dataset.state=task?.status||'';assistantEntry.textContent=task?.status==='running'?'Agent 执行中':'Agent 任务';}});
+ setupAgentTasks({panel,connection,getDoc,notify,locate:id=>{select(id);canvas.querySelector(`[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({block:"center",behavior:motion()});},onState:task=>{agentRunning=task?.status==='running';proofButton.disabled=proofBusy||agentRunning;tabs.assistant.dataset.state=task?.status||'';assistantEntry.textContent=task?.status==='running'?'Agent 执行中':'Agent 任务';}});
  async function runProof(){
   if(proofBusy)return;
   if(!getDoc().journal||getDoc().composition){openCommands('校样','校样与输出');return;}
