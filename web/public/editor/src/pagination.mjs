@@ -118,7 +118,24 @@ function once(doc,measure,entries) {
   if(front.parts.length)blocks=blocks.slice(front.parts.length);
   const endnotes=l.notesMode==='endnote'?l._notes:l._notes.filter(n=>longNotes.has(n.id));
   if(endnotes.length){blocks=[...blocks,{id:'_endnotes-title',type:'heading',text:'注释',fontFamily:'sans',level:1,_generated:true},...endnotes.map(n=>({id:`_endnote-${n.id}`,type:'paragraph',text:`${n.marker??l._notes.indexOf(n)+1}　${n.text}`,indent:0,_generated:true}))];if(l.notesMode!=='endnote')warnings.push('超过版心高度 35% 的长注释已移到文末，避免脚注溢出。');}
+  const byId=new Map(blocks.map(b=>[b.id,b])),groupedCaptions=new Set(),figureParts=new Map();
   for(const b of blocks){
+    if(b.type==='image'&&b.captionIds?.length){
+      const captions=b.captionIds.map(id=>byId.get(id)).filter(Boolean);
+      const parts=[b,...captions].map(block=>({block,height:size(block,block.text,false,{})}));
+      const total=parts.reduce((sum,p)=>sum+p.height,0),text=parts.map(p=>p.block.text).join('\n');
+      if(total<=height-noteHeight(noteIds(text))){figureParts.set(b.id,{parts,total,text});captions.forEach(c=>groupedCaptions.add(c.id));}
+      else warnings.push('有图体和题注合计超过版心，请缩小图片或调整题注。');
+    }
+  }
+  for(const b of blocks){
+    if(groupedCaptions.has(b.id))continue;
+    const group=figureParts.get(b.id);
+    if(group){
+      while(!fits(group.total,group.text)&&(used.some(n=>n>0)||notes.size))nextColumn();
+      for(const part of group.parts)place(part.block,part.block.text,part.height);
+      continue;
+    }
     if(b.type==='pageBreak'){newPage();continue;}
     if(['table','toc','index'].includes(b.type)){
       const isTable=b.type==='table',count=isTable?b.rows.length:b._entries.length,header=isTable?headerRowCount(b):{count:0,warnings:[]},headers=header.count;

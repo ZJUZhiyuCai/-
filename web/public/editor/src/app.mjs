@@ -28,6 +28,8 @@ import {setupComposition} from './composition-ui.mjs';
 import {setupPrintExport} from './print-ui.mjs';
 import {setupNativeEditor} from './native-ui.mjs';
 import {setupWorkbench} from './workbench.mjs';
+import {blockDeletion,blockLabel,isBlockDeleteKey} from './block-actions.mjs';
+import {figureGroups} from './figure-audit.mjs';
 const $ = (id) => document.getElementById(id),
   storageKey = "shuye-web-"+(new URLSearchParams(location.search).get("project")||"sample"),
   history = new History();
@@ -112,6 +114,11 @@ function fillLayout() {
 }
 function fillBlock() {
   const b = active();
+  $('deleteBlock').disabled = !b;
+  $('moveUp').disabled = !b || doc.blocks.indexOf(b) === 0;
+  $('moveDown').disabled = !b || doc.blocks.indexOf(b) === doc.blocks.length - 1;
+  $('deleteBlock').textContent = '删除' + blockLabel(b);
+  document.dispatchEvent(new Event('shuye:selection-changed'));
   $("emptySelection").hidden = !!b;
   $("blockFields").hidden = !b;
   if (!b) return;
@@ -343,8 +350,8 @@ function refresh() {
   return render();
 }
 function change(fn) {
-  const previous=structuredClone(doc);
-  try{fn();doc=validateDocument(doc);}catch(e){doc=previous;fillLayout();fillBlock();status(e.message,true);return Promise.resolve(false);}
+  const previous=structuredClone(doc),previousSelected=selected;
+  try{fn();doc=validateDocument(doc);}catch(e){doc=previous;selected=previousSelected;fillLayout();fillBlock();status(e.message,true);return Promise.resolve(false);}
   history.push(previous);
   return refresh();
 }
@@ -513,15 +520,37 @@ for (const [id, key, convert] of [
     }
   };
 }
-$("deleteBlock").onclick = () => {
-  if (!active()) return;
-  change(() => {
-    const index = doc.blocks.findIndex((b) => b.id === selected);
-    doc.blocks.splice(index, 1);
-    doc.comments=doc.comments.filter(c=>c.blockId!==selected);
-    selected = doc.blocks[Math.min(index, doc.blocks.length - 1)]?.id;
-  });
+const notice=(message,tone='info',undo=false)=>document.dispatchEvent(new CustomEvent('shuye:notice',{detail:{message,tone,undo}}));
+async function deleteSelected(includeCaptions=false,id=selected) {
+  const b=doc.blocks.find(b=>b.id===id);if(!b)return;
+  try {
+    const result=blockDeletion(doc,id,{includeCaptions});
+    if(await change(()=>{doc=result.document;selected=result.selected;})===false)return;
+    const message=`已删除${blockLabel(b)}${includeCaptions?'及关联题注':''}。可撤销恢复。`;
+    status(message);notice(message,'info',true);
+    document.querySelector('#wbDeleteBlock')?.focus();
+  } catch(e) {status(e.message,true);notice(e.message,'error');}
+}
+$('deleteBlock').onclick=()=>{
+  const b=active();if(!b)return;
+  const anchored=doc.blocks.filter(a=>a.anchor?.targetId===b.id||a.sideTextIds?.includes(b.id));
+  const cellImages=b.cellImages?.length||0;
+  if(!b.captionIds?.length&&!anchored.length&&!cellImages){void deleteSelected();return;}
+  const d=document.createElement('dialog');d.className='workspace-dialog wb-delete-dialog';
+  const h=document.createElement('h2');h.id='deleteComponentTitle';h.textContent='删除'+blockLabel(b);d.setAttribute('aria-labelledby',h.id);
+  const p=document.createElement('p');p.textContent=[b.captionIds?.length?'默认保留题注。':'',anchored.length?`${anchored.length} 个关联组件将保留在文稿中，解除位置绑定。`:'',cellImages?`${cellImages} 张单元格图片将保留为独立组件。`:''].join('');
+  const label=document.createElement('label'),check=document.createElement('input');check.type='checkbox';label.append(check,'同时删除关联题注');label.hidden=!b.captionIds?.length;
+  const actions=document.createElement('div');actions.className='wb-delete-actions';
+  const cancel=document.createElement('button');cancel.textContent='取消';cancel.onclick=()=>d.close();
+  const remove=document.createElement('button');remove.textContent='删除'+blockLabel(b);remove.className='danger';remove.onclick=()=>{const captions=check.checked;d.close();void deleteSelected(captions,b.id);};
+  actions.append(cancel,remove);d.append(h,p,label,actions);d.onclose=()=>{d.remove();document.querySelector('#wbDeleteBlock')?.focus();};document.body.append(d);d.showModal();cancel.focus();
 };
+document.addEventListener('keydown',e=>{
+  if(!isBlockDeleteKey(e)||e.defaultPrevented||document.querySelector('dialog[open]')||document.querySelector('.workspace.composition-mode'))return;
+  if(e.target.closest?.('input,textarea,select,[contenteditable], [role="textbox"]'))return;
+  if(!e.target.closest?.('.canvas,.outline,.wb-selection'))return;
+  e.preventDefault();$('deleteBlock').click();
+});
 for (const [id, delta] of [
   ["moveUp", -1],
   ["moveDown", 1],
@@ -633,9 +662,12 @@ $("fileInput").onchange = async (e) => {
   }
 };
 function extnameIsDocx(name){return /\.docx$/i.test(name);}
-$("addImage").onclick = () => $("imageInput").click();
+let pendingFigure=null;
+$("addImage").onclick = () => {pendingFigure=null;$("imageInput").click();};
+document.addEventListener('shuye:attach-figure',e=>{pendingFigure={blockId:e.detail.blockId,snapshot:JSON.stringify(doc)};$('imageInput').click();});
 $("imageInput").onchange = async (e) => {
   const f = e.target.files[0];
+  const target=pendingFigure;pendingFigure=null;
   e.target.value = "";
   if (!f) return;
   if (f.size > 5 * 1024 * 1024) {
@@ -657,6 +689,14 @@ $("imageInput").onchange = async (e) => {
       i.onerror = () => reject(Error("图片无法解码"));
       i.src = data;
     });
+    if(target){
+      if(target.snapshot!==JSON.stringify(doc))throw Error('选择图片期间文稿已变化，请重新补图。');
+      const group=figureGroups(doc).find(g=>g.blockId===target.blockId&&!g.ownerId&&!g.adjacentId);
+      if(!group)throw Error('该图题已变化或已有图体，请重新检查。');
+      if(doc.blocks.length>=10000||new Blob([JSON.stringify(doc),data]).size>90*1024*1024)throw Error('工程容量不足，请压缩图片或分卷。');
+      await change(()=>{const id=uid();doc.blocks.splice(doc.blocks.findIndex(b=>b.id===group.beforeId),0,{id,type:'image',text:'',src:data,width:80,wrap:'none',captionIds:group.captionIds});selected=id;});
+      status(`已补入图${group.number}并关联题注。`);return;
+    }
     insert("image", {
       src: data,
       width: 80,
@@ -676,7 +716,7 @@ document.addEventListener("keydown", (e) => {
   }
   if (
     e.key.toLowerCase() === "z" &&
-    !e.target.matches("input,textarea,[contenteditable]")
+    !e.target.closest("input,textarea,[contenteditable]")
   ) {
     e.preventDefault();
     $(e.shiftKey ? "redo" : "undo").click();
@@ -706,6 +746,10 @@ setupNativeEditor();
 setupRubyEditor({getDoc:()=>doc,getSelected:()=>selected,getSelectionRange:()=>selectionRange,change,status});
 document.fonts.addEventListener('loadingdone',()=>{clearTimeout(paginationTimer);paginationTimer=setTimeout(()=>render(),100);});
 void refresh();
-const connection=await setupCloud({getDoc:()=>doc,status,replaceDoc:next=>change(()=>{doc=next;selected=doc.blocks[0]?.id;})});
-setupWorkbench({getDoc:()=>doc,connection,fit:fitPage});
+const connection=await setupCloud({getDoc:()=>doc,status,replaceDoc:(next,{resetHistory=false}={})=>{
+  if(!resetHistory)return change(()=>{doc=next;selected=doc.blocks[0]?.id;});
+  const validated=validateDocument(next);doc=validated;selected=doc.blocks[0]?.id;
+  history.clear();editingSnapshot=null;selectionRange=null;return refresh();
+}});
+setupWorkbench({getDoc:()=>doc,getSelected:()=>selected,select:choose,connection,fit:fitPage});
 if (startupWarning) status(startupWarning, true);

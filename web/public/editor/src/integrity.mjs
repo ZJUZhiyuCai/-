@@ -1,5 +1,6 @@
 import {legacySource} from './asset-sources.mjs';
 import {journalDiagnostics} from './journal.mjs';
+import {figureDiagnostics} from './figure-audit.mjs';
 // Inline formulas have stable IDs. The marker is atomic in the editable text;
 // its TeX lives outside text so edits cannot silently move or duplicate it.
 export const mathTokens = text => [...String(text).matchAll(/\[\[math:([-\w]+)\]\]/g)];
@@ -42,5 +43,5 @@ export function validateImportReports(raw) {
   });
 }
 export function documentDiagnostics(doc) {
-  return [...(doc.importReports||[]).flatMap(r=>r.diagnostics.map(d=>({...d,sourceSha256:r.sourceSha256}))),...journalDiagnostics(doc)];
+  return [...(doc.importReports||[]).flatMap(r=>r.diagnostics.map(d=>({...d,sourceSha256:r.sourceSha256}))),...journalDiagnostics(doc),...figureDiagnostics(doc)];
 }

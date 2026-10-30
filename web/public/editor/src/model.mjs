@@ -279,6 +279,10 @@ export class History {
     if (this.past.length > this.limit) this.past.shift();
     this.future = [];
   }
+  clear() {
+    this.past = [];
+    this.future = [];
+  }
   undo(doc) {
     if (!this.past.length) return null;
     this.future.push(JSON.stringify(doc));

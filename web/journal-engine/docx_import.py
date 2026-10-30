@@ -357,6 +357,25 @@ def import_docx(data,revision_policy='require-clean'):
         report={'kind':'docx','sourceSha256':hashlib.sha256(data).hexdigest(),'sourceBytes':len(data),'counts':{'sourceMath':source_math,'sourceDisplayMath':sum(1 for e in root.iter(M+'oMathPara')),'sourceTables':sum(1 for e in root.iter(W+'tbl')),'importedTables':sum(b['type']=='table' for b in blocks),'importedMath':output_math,'sourceImages':source_images,'importedImages':output_images,'sourceNumberedParagraphs':numbering.source_count,'importedNumberedParagraphs':numbering.imported_count},'diagnostics':diagnostics}
         report['counts'].update(field_stats)
         report['counts'].update(legacy_counts,sourceOmmlMath=source_omml_math)
+        # A 0/0 image count does not mean a complete manuscript: some legacy
+        # files contain captions but no embedded figures. Keep source evidence
+        # as a warning; the live document audit resolves after assets are added.
+        figure_numbers=set()
+        for i,b in enumerate(blocks):
+            if b['type'] not in ('paragraph','heading'): continue
+            text=b.get('text','').strip()
+            match=re.match(r'^图\s*(\d+)(.*)$',text)
+            next_text=blocks[i+1].get('text','').strip() if i+1<len(blocks) else ''
+            pair=re.match(r'^Fig(?:ure)?\.?\s*(\d+)\b',next_text,re.I)
+            if re.match(r'^(?:图\s*\d+\s*(?:展示|显示|表明|说明|所示|可见|给出|描绘|呈现)|Fig(?:ure)?\.?\s*\d+\s+(?:shows?|depicts?|illustrates?|presents?|demonstrates?|is|was)\b)',text,re.I): continue
+            if match and (re.match(r'^(?:\s|[.:：])',match[2]) or pair and pair[1]==match[1]): figure_numbers.add(match[1])
+            english=re.match(r'^Fig(?:ure)?\.?\s*(\d+)(?:\s|[.:：])',text,re.I)
+            if english: figure_numbers.add(english[1])
+        report['counts']['figureCaptions']=len(figure_numbers)
+        if figure_numbers and not output_images:
+            message='发现 '+str(len(figure_numbers))+' 处图题，但未导入任何图体；请补入对应原图。'
+            report['diagnostics'].append({'code':'DOCX_FIGURE_CONTENT_MISSING','severity':'warning','message':message})
+            warnings.append(message)
         report['counts'].update(sourceEmfImages=sum(1 for e in root.iter() if local(e)=='blip' and rels.get(e.get(R+'embed'),'').lower().endswith('.emf')),importedEmfImages=sum('vectorSource' in b for b in blocks))
         report['counts']['importedImageGroups']=group_tables
         report['diagnostics'].extend(evidence.diagnostics)

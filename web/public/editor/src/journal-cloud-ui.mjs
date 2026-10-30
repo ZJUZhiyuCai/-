@@ -1,6 +1,7 @@
 import {documentFingerprint} from './project-sync.mjs';
 import {showJournalReport} from './journal-report-ui.mjs';
 import {ProofSession} from './proof-session.mjs';
+import {figureDiagnostics} from './figure-audit.mjs';
 
 export function setupJournalCloud({api,connection,getDoc,button,status}){
  const saveFile=(name,data,type)=>{const url=URL.createObjectURL(new Blob([data],{type})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);};
@@ -28,8 +29,9 @@ export function setupJournalCloud({api,connection,getDoc,button,status}){
    history.replaceState(null,'','?project='+projectId);
    const report=r.document.importReports[0],counts=report.counts;
    const errors=report.diagnostics?.filter(d=>d.severity==='error').length||0;
+   const missing=figureDiagnostics({...r.document,blocks:r.document.blocks||[]}).filter(d=>d.severity==='error').length;
    const legacy=counts.sourceLegacyMath?`（含 ${counts.sourceLegacyMath} 个旧式公式）`:'';
-   status(`已导入 ${counts.importedMath}/${counts.sourceMath} 个数学区${legacy}、${counts.importedImages}/${counts.sourceImages??'未知'} 张图。`+(errors?`有 ${errors} 项导入阻断，须修复后再交付；请查看预检报告。`:'请在“期刊模板”和右侧“期刊角色”指定首面字段。'),!!errors);
+   status(`已导入 ${counts.importedMath}/${counts.sourceMath} 个数学区${legacy}、${counts.importedImages}/${counts.sourceImages??'未知'} 张图。`+(missing?`缺少 ${missing} 张图体，请用纸面上方的“补入图片”完成对应图题。`:'')+(errors?`有 ${errors} 项导入阻断，须修复后再交付；请查看预检报告。`:missing?'':'请在“期刊模板”和右侧“期刊角色”指定首面字段。'),!!(errors||missing));
   }catch(e){status(e.message,true);}finally{importing=false;}
  };
  button('自动排版期刊',async()=>{

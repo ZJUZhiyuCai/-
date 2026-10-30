@@ -4,14 +4,14 @@ export const documentFingerprint=value=>JSON.stringify(value,(_key,v)=>v&&typeof
 export class ProjectConnection {
   constructor({api,getDoc,replaceDoc,onChange=()=>{}}){Object.assign(this,{api,getDoc,replaceDoc,onChange,projectId:null,revision:0,base:'',busy:false,writing:false,epoch:0});}
   get dirty(){return this.projectId!==null&&documentFingerprint(this.getDoc())!==this.base;}
-  async replaceSnapshot(document){this.applying=true;try{return await this.replaceDoc(document);}finally{this.applying=false;}}
+  async replaceSnapshot(document,options={}){this.applying=true;try{return await this.replaceDoc(document,options);}finally{this.applying=false;}}
   disconnect(){this.epoch++;this.projectId=null;this.base='';this.onChange();}
   async open(projectId){
     if(this.writing)throw Error('SAVE_IN_PROGRESS');
     const epoch=++this.epoch,before=documentFingerprint(this.getDoc()),r=await this.api('get_project',{projectId});
     if(epoch!==this.epoch)return false;
     if(documentFingerprint(this.getDoc())!==before)throw Error('LOCAL_CHANGED_DURING_OPEN');
-    if(await this.replaceSnapshot(r.document)===false)throw Error('DOCUMENT_REJECTED');
+    if(await this.replaceSnapshot(r.document,{resetHistory:this.projectId!==projectId})===false)throw Error('DOCUMENT_REJECTED');
     if(epoch!==this.epoch)return false;
     this.projectId=projectId;this.revision=r.revision;this.base=documentFingerprint(r.document);this.onChange();return true;
   }
