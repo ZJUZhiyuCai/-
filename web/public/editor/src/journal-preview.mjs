@@ -2,7 +2,7 @@
 // The browser still does not certify XeLaTeX pagination or anchor placement.
 export function previewHeader(layout,journal,pageNumber){
  const side=pageNumber%2===0?'headerEven':'headerOdd';
- if(!journal)return layout[side]??layout.header??'';
+ if(!journal)return (pageNumber%2===0?layout.headerEven??layout.header:layout.header)??'';
  const placeholder='书页 · 开源排版';
  if(['header','headerEven','headerOdd'].some(k=>layout[k]!==undefined&&layout[k]!==placeholder)){
   const value=layout[side]??layout.header??'';

@@ -12,6 +12,7 @@ test('journal preview preserves shared, odd/even and explicitly empty header ove
  assert.equal(previewHeader({...base,header:'共享',headerOdd:'奇数'},journal,3),'奇数');
  assert.equal(previewHeader({...base,header:''},journal,1),'');
  assert.equal(previewHeader({...base,header:'共享',headerEven:''},journal,2),'');
+ assert.equal(previewHeader({...base,header:'图书页眉'},null,1),'图书页眉');
 });
 test('journal role typography is used for both measuring and rendering without changing source style',()=>{
  const block={type:'paragraph',role:'title-zh',text:'标题',fontSize:8},before=structuredClone(block);
