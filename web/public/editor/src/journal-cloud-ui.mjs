@@ -61,7 +61,20 @@ export function setupJournalCloud({api,connection,getDoc,button,status}){
   const url=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'}));
   const errors=result.report.quality.diagnostics.filter(d=>d.severity==='error');
   status(`${result.pages} 页 PDF 已生成；${result.report.formulaCoverage.total} 个数学区。${errors.length?`预检有 ${errors.length} 项阻断，请按报告修复。`:'请打开校样核对实际版面。'}`,!!errors.length);
-  const dialog=showJournalReport(result,{openPdf:()=>window.open(url,'_blank','noopener'),downloadPdf:()=>saveFile(`${title}-全文校样.pdf`,bytes,'application/pdf'),downloadReport:()=>saveFile(`${title}-校样报告.json`,JSON.stringify(result,null,2),'application/json')});
+  const checkCurrent=async()=>{
+   const local=()=>{if(connection.dirty||connection.writing||connection.projectId!==projectId||connection.revision!==result.revision)throw Error('文稿已变化，请关闭报告并重新生成校样。');};
+   local();const latest=await api('get_journal_proof',{proofId});local();
+   if(latest.stale||latest.status!=='complete'||latest.projectId!==projectId||latest.revision!==result.revision||latest.pdfSha256!==result.pdfSha256)throw Error('校样已过期，请关闭报告并重新生成校样。');
+  };
+  const dialog=showJournalReport(result,{
+   openPdf:async()=>{
+    // Reserve the browsing context during the click, before asynchronous checks.
+    const tab=window.open('about:blank','_blank');if(tab)tab.opener=null;
+    try{await checkCurrent();if(tab)tab.location.replace(url);else saveFile(`${title}-全文校样.pdf`,bytes,'application/pdf');}catch(e){tab?.close();throw e;}
+   },
+   downloadPdf:async()=>{await checkCurrent();saveFile(`${title}-全文校样.pdf`,bytes,'application/pdf');},
+   downloadReport:async()=>{await checkCurrent();saveFile(`${title}-校样报告.json`,JSON.stringify(result,null,2),'application/json');}
+  });
   dialog.addEventListener('close',()=>setTimeout(()=>URL.revokeObjectURL(url),60000),{once:true});
   return result;
 

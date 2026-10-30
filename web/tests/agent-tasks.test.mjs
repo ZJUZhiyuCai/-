@@ -94,6 +94,17 @@ test('quality failure requires attention, while a valid no-change plan still pro
 test('proof-only tasks skip the model and protect current revision',async t=>{
  const f=await fixture(t),started=await callTool(f.alice,'start_agent_task',{...f.args,mode:'proof'}),done=await f.terminal(started);assert.equal(done.status,'review');assert.equal(f.events.includes('start_layout_plan'),false);assert.equal((await f.alice.get('paper')).revision,1);
 });
+
+test('a deployment without a model still supports proof tasks and rejects layout before creating a task',async t=>{
+ const f=await fixture(t);f.alice.layoutAssistant=undefined;
+ const cap=await callTool(f.alice,'get_agent_capabilities',{});
+ assert.equal(cap.enabled,true);assert.deepEqual(cap.modes,['proof']);assert.equal(cap.layoutModelConfigured,false);
+ await assert.rejects(f.start,/LAYOUT_ASSISTANT_UNAVAILABLE/);
+ assert.equal((await callTool(f.alice,'list_agent_tasks',{})).tasks.length,0);
+ const done=await f.terminal(await callTool(f.alice,'start_agent_task',{...f.args,mode:'proof'}));
+ assert.equal(done.status,'review');assert.equal((await f.alice.get('paper')).revision,1);
+ assert.equal(f.events.includes('start_layout_plan'),false);
+});
 test('restart during an ambiguous commit is observable and never replays that write',async t=>{
  const f=await fixture(t),done=await f.terminal(await f.start());await f.restart();const file=join(f.dir,'tasks',done.taskId+'.json'),saved=JSON.parse(await readFile(file,'utf8'));
  await writeFile(file,JSON.stringify({...saved,status:'running',stage:'committing',appliedRevision:undefined,resultSha256:undefined}));await f.restart();const recovered=await f.read(done);

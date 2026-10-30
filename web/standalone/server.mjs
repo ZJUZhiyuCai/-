@@ -22,7 +22,7 @@ export async function startServer({directory,publicDirectory,origin,basePath='/s
  }
  if(journal)store.JOURNAL_RUNTIME=await createJournalRuntime({engineDirectory:fileURLToPath(new URL(typeof SHUYE_BUNDLED_JOURNAL_PATH==='string'?SHUYE_BUNDLED_JOURNAL_PATH:'../journal-engine/',import.meta.url)),...journal,directory:resolve(directory,'journal-proofs')});
  if(assistant)store.LAYOUT_ASSISTANT=await createLayoutAssistant({...assistant,directory:resolve(directory,'layout-plans')});
- if(assistant&&journal)store.AGENT_TASKS=await createAgentTasks({directory:resolve(directory,'agent-tasks'),invoke:callTool});
+ if(journal)store.AGENT_TASKS=await createAgentTasks({directory:resolve(directory,'agent-tasks'),invoke:callTool});
  const attempts=new Map();let activeApi=0;
  const cookie=(token,age=604800)=>`shuye_session=${token}; Path=${basePath}/; HttpOnly; SameSite=Strict; Max-Age=${age}${secure?'; Secure':''}`;
  const brand=`<a class="auth-brand" href="${basePath}/" aria-label="书页 · 项目库"><svg viewBox="0 0 48 48" width="36" height="36" aria-hidden="true" focusable="false"><use href="${basePath}/brand/shuye-mark.svg#mark"/></svg><span>书页</span></a>`;

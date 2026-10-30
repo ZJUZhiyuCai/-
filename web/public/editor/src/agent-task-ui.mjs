@@ -93,7 +93,7 @@ export function setupAgentTasks({panel,connection,getDoc,notify,onState=()=>{}})
   const id=connection.projectId,token=epoch;if(!id)throw Error('请先保存工程。');
   if(!pending){if(connection.dirty)await connection.save();if(token!==epoch||id!==connection.projectId)return;if(connection.dirty)throw Error('保存期间有新输入，请再次保存后执行。');savePending({projectId:id,expectedRevision:connection.revision,requestId:crypto.randomUUID(),goal:prompt.value.trim(),mode});}
   const request={...pending};let started;
-  try{started=await api('start_agent_task',request);}catch(e){if(['AGENT_BUSY_RETRY','REVISION_CONFLICT','IDEMPOTENCY_CONFLICT','AGENT_RUNTIME_UNAVAILABLE','AGENT_CLOSING','AGENT_TASK_LIMIT'].includes(e.message)&&token===epoch)savePending(null);throw e;}
+  try{started=await api('start_agent_task',request);}catch(e){if(['AGENT_BUSY_RETRY','REVISION_CONFLICT','IDEMPOTENCY_CONFLICT','AGENT_RUNTIME_UNAVAILABLE','LAYOUT_ASSISTANT_UNAVAILABLE','AGENT_CLOSING','AGENT_TASK_LIMIT'].includes(e.message)&&token===epoch)savePending(null);throw e;}
   if(token!==epoch||id!==connection.projectId)return;savePending(null);task=started;observed=started.taskId;tasks=[started,...tasks.filter(t=>t.taskId!==started.taskId)];editing=false;render();schedule();
  });};
  async function act(tool){await run(async()=>{

@@ -13,7 +13,8 @@ export function showJournalReport(result,{openPdf,downloadPdf,downloadReport}={}
   const item=append(metrics,'div','');append(item,'dt',name);append(item,'dd',String(value));
  }
  const actions=append(dialog,'div','');actions.className='proof-actions';
- for(const [text,fn,primary] of [['打开 PDF 校样',openPdf,true],['下载 PDF',downloadPdf],['检查报告',downloadReport]])if(fn){const b=append(actions,'button',text);b.type='button';if(primary)b.className='primary';b.onclick=fn;}
+ const actionError=append(dialog,'p','');actionError.hidden=true;actionError.setAttribute('role','alert');
+ for(const [text,fn,primary] of [['打开 PDF 校样',openPdf,true],['下载 PDF',downloadPdf],['检查报告',downloadReport]])if(fn){const b=append(actions,'button',text);b.type='button';if(primary)b.className='primary';b.onclick=async()=>{if(b.disabled)return;b.disabled=true;actionError.hidden=true;try{await fn();}catch(e){actionError.textContent=e.message;actionError.hidden=false;}finally{b.disabled=false;}};}
  append(dialog,'p','检查绑定当前修订。修改文稿后，请重新生成校样。').className='proof-context';
  for(const [heading,entries] of [['必须修复',errors],['待核对',warnings]]){
   if(!entries.length)continue;

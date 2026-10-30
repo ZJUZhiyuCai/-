@@ -14,7 +14,7 @@
 
 ## 外部 Agent 契约
 
-先查询 `get_agent_capabilities` 与 `get_layout_assistant`。本机连续任务只在独立服务同时配置 assistant 和 journal 后启用；Workers 仍提供结构化编辑工具，不宣称能运行本机模型或 TeX。低层工具保留，用于外部 Agent 自行规划内容和结构修改。
+先查询 `get_agent_capabilities` 与 `get_layout_assistant`。独立服务配置 journal 后支持 `mode=proof` 校样任务；配置 assistant 后才支持 `mode=layout` 模型排版任务。`modes`、`proofReady` 与 `layoutModelConfigured` 返回实际配置范围，模型即时可用性仍以 `get_layout_assistant.ready` 为准。Workers 仍提供结构化编辑工具，不宣称能运行本机模型或 TeX。低层工具保留，用于外部 Agent 自行规划内容和结构修改。
 
 | 工具 | 作用 |
 | --- | --- |

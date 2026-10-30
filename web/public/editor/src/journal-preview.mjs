@@ -1,5 +1,15 @@
 // Mirrors journal-engine/journal.py ROLE_STYLE for structural editing.
 // The browser still does not certify XeLaTeX pagination or anchor placement.
+export function previewHeader(layout,journal,pageNumber){
+ const side=pageNumber%2===0?'headerEven':'headerOdd';
+ if(!journal)return layout[side]??layout.header??'';
+ const placeholder='书页 · 开源排版';
+ if(['header','headerEven','headerOdd'].some(k=>layout[k]!==undefined&&layout[k]!==placeholder)){
+  const value=layout[side]??layout.header??'';
+  return value===placeholder?(layout.header??''):value;
+ }
+ return journal.name||layout.header||'';
+}
 const roles={
  'title-zh':[15,19,'center',true],'authors-zh':[8.6,12,'center',false],
  'affiliation-zh':[7,10,'center',false],'abstract-zh':[6.9,12.2,'justify',false],

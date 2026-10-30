@@ -117,6 +117,7 @@ export async function createAgentTasks({directory,invoke,pollMs=400,timeoutMs=48
     const ownerHash=hash(store.owner),requestHash=hash(a),old=[...index.values()].find(t=>t.ownerHash===ownerHash&&t.requestId===a.requestId);
     if(old){if(old.requestHash!==requestHash)throw Error('IDEMPOTENCY_CONFLICT');return api.get(store,{projectId:old.projectId,taskId:old.taskId});}
     const current=await store.get(a.projectId);if(current.revision!==a.expectedRevision)throw Error('REVISION_CONFLICT');
+    if(a.mode==='layout'&&!store.layoutAssistant)throw Error('LAYOUT_ASSISTANT_UNAVAILABLE');
     if(active.size||locks.size)throw Error('AGENT_BUSY_RETRY');if(index.size>=maxTasks)throw Error('AGENT_TASK_LIMIT');
     const t={taskId:randomUUID(),ownerHash,requestHash,...a,revision:a.expectedRevision,sourceSha256:hash(current.document),status:'running',stage:'inspect',createdAt:now(),attempt:1,events:[]};delete t.expectedRevision;
     await save(t);launch(store,t);return publicTask(t,current);

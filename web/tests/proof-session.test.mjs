@@ -58,3 +58,19 @@ test('typing during PDF retrieval prevents delivery of the old revision',async t
  }});
  await assert.rejects(ui.generateProof(),/下载期间文稿/);assert.equal(nodes.filter(n=>n.tag==='dialog').length,0);assert.equal(ui.proofState(),'stale');
 });
+
+test('an already open report rejects cached downloads after a remote save or local edit',async t=>{
+ const nodes=environment(t),connection={projectId:'paper',revision:7,dirty:false};let stale=false;
+ const ui=setupJournalCloud({connection,getDoc:()=>({title:'Synthetic'}),button(){},status(){},api:async name=>{
+  if(name==='get_journal_proof')return {...proof,stale};
+  if(name==='download_journal_pdf')return {...proof,base64:'AA=='};
+  throw Error('Should not compile');
+ }});
+ await ui.generateProof();stale=true;
+ await nodes.find(n=>n.tag==='button'&&n.textContent==='下载 PDF').onclick();
+ assert.ok(nodes.some(n=>n.textContent?.includes('校样已过期')));
+ stale=false;connection.dirty=true;
+ await nodes.find(n=>n.tag==='button'&&n.textContent==='检查报告').onclick();
+ assert.ok(nodes.some(n=>n.textContent?.includes('文稿已变化')));
+ assert.equal(nodes.filter(n=>n.tag==='a').length,0);
+});

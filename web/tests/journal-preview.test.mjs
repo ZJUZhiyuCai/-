@@ -1,7 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {journalPreviewStyle,journalFrontMatter} from '../public/editor/src/journal-preview.mjs';
+import {journalPreviewStyle,journalFrontMatter,previewHeader} from '../public/editor/src/journal-preview.mjs';
 import {styleBlock} from '../public/editor/src/pagination.mjs';
+
+test('journal preview preserves shared, odd/even and explicitly empty header overrides',()=>{
+ const journal={name:'刊名'},placeholder='书页 · 开源排版';
+ const base={header:placeholder,headerEven:placeholder,headerOdd:placeholder};
+ assert.equal(previewHeader(base,journal,1),'刊名');
+ assert.equal(previewHeader({...base,header:'共享'},journal,1),'共享');
+ assert.equal(previewHeader({...base,header:'共享',headerEven:'偶数'},journal,2),'偶数');
+ assert.equal(previewHeader({...base,header:'共享',headerOdd:'奇数'},journal,3),'奇数');
+ assert.equal(previewHeader({...base,header:''},journal,1),'');
+ assert.equal(previewHeader({...base,header:'共享',headerEven:''},journal,2),'');
+});
 test('journal role typography is used for both measuring and rendering without changing source style',()=>{
  const block={type:'paragraph',role:'title-zh',text:'标题',fontSize:8},before=structuredClone(block);
  const style={setProperty(){}};styleBlock({style},block,{fontSize:9,lineHeight:1.6,height:240,top:16,bottom:16,_journal:{}});

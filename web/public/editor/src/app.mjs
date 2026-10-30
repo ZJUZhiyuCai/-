@@ -8,6 +8,7 @@ import {
   replaceBlockText,
 } from "./model.mjs";
 import { paginate, blockElement, notesElement } from "./pagination.mjs";
+import {previewHeader} from './journal-preview.mjs';
 import { parseFbd } from "./fbd.mjs";
 import { setupAdvanced } from './advanced-ui.mjs';
 import { setupEditorTools } from './editor-tools.mjs';
@@ -214,7 +215,7 @@ async function render() {
     const left = (index + l.pageStart) % 2 === 1 ? l.inner : l.outer;
     const header = document.createElement("div");
     header.className = "paper-header";
-    header.textContent = doc.journal?.name||((index+l.pageStart)%2===0?l.headerEven??l.header:l.header);
+    header.textContent = previewHeader(l,doc.journal,index+l.pageStart);
     header.style.left = `${left}mm`;
     header.style.right = `${l.width - left - (l.width - l.inner - l.outer)}mm`;
     header.style.top = `${Math.max(3, l.top - 9)}mm`;
