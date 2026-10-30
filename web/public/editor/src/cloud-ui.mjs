@@ -12,7 +12,9 @@ export async function setupCloud({getDoc,replaceDoc,status}){
  button('另存云端',async()=>{if(pending)return;pending=true;try{const id='book-'+crypto.randomUUID();await connection.create(id);history.replaceState(null,'','?project='+id);ready=true;stashDraft();status(connection.dirty?'副本已创建；保存期间的新修改仍在浏览器，请再次保存':'已创建独立副本');}finally{pending=false;}});
  document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();e.stopImmediatePropagation();save.click();}},true);
  const stashDraft=()=>{if(connection.applying||!connection.projectId||!connection.dirty)return;try{localStorage.setItem('shuye-draft-'+connection.projectId,JSON.stringify({baseRevision:connection.revision,document:getDoc()}));}catch{status('浏览器草稿缓存已满或不可用，请保存到云端或下载备份',true);}};
- document.addEventListener('shuye:document-changed',stashDraft);window.addEventListener('pagehide',stashDraft);
+ let draftTimer;
+ document.addEventListener('shuye:document-changed',()=>{clearTimeout(draftTimer);draftTimer=setTimeout(stashDraft,400);});
+ window.addEventListener('pagehide',()=>{clearTimeout(draftTimer);stashDraft();});
  window.addEventListener('beforeunload',e=>{stashDraft();if(connection.dirty){e.preventDefault();e.returnValue='';}});
  const projectId=new URLSearchParams(location.search).get('project');
  if(projectId){save.disabled=true;try{let draft;try{draft=localStorage.getItem('shuye-draft-'+projectId);}catch{status('浏览器草稿缓存不可用，仍可打开云端工程',true);}await connection.open(projectId);ready=true;if(draft){const local=JSON.parse(draft);if(local.baseRevision===connection.revision&&documentFingerprint(local.document)!==connection.base&&await confirmAction('发现上次未提交的浏览器草稿，是否恢复？'))await replaceDoc(local.document);else if(local.baseRevision!==connection.revision)status('云端已有更新，上次草稿仍保留在此浏览器。请在“恢复草稿”中取回。',true);}}catch(e){status('无法打开云端工程：'+e.message,true);}finally{save.disabled=false;}}

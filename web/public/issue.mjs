@@ -3,7 +3,7 @@ const base=new URL('./',location.href),el=id=>document.getElementById(id);
 async function api(tool,args={}){const r=await fetch(new URL('api/mcp-projects',base),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tool,arguments:args})});if(r.status===401){location.assign(new URL('login',base));throw Error('请先登录');}const v=await r.json();if(!r.ok)throw Error(v.error||'请求失败');return v;}
 const projectNames=new Map(),projectRevisions=new Map(),ineligible=new Set();
 // previewKey：正在预览的历史修订载入时的方案快照；lastProof：最近一次取回的校样及其绑定信息；run：当前这一次“启动 + 轮询”的取消标识。
-let issueId='issue-'+crypto.randomUUID(),revision=0,articles=[],history=[],busy=false,savedKey='',previewing=null,previewKey=null,lastProof=null,run=null,drag=null,clock=0;
+let issueId='issue-'+crypto.randomUUID(),revision=0,articles=[],history=[],busy=false,savedKey='',previewing=null,previewKey=null,lastProof=null,run=null,drag=null,clock=0,issueReady=false;
 
 // —— 状态与提示
 const friendly=text=>String(text).startsWith('WORD_RUNTIME_UNAVAILABLE')?'整期校样服务暂不可用，请检查 LibreOffice 与 UNO 配置。':String(text);
@@ -211,8 +211,11 @@ function paintProof(b){
  // 不属于当前方案的校样：收起页码表与下载，只留下原因。
  el('delivery').hidden=!(state==='ready'&&b?.bound);
  el('proof-state').textContent=label;el('proof-message').textContent=message;proof.dataset.tone=tone;
- proof.hidden=state==='idle'&&!revision;el('resume').hidden=!revision||state==='running';
+ if(!issueReady&&state==='idle'){label='编排可用';message='当前环境未启用整期导出。可继续编排并保存方案，单篇校样请在编辑器生成。';el('proof-state').textContent=label;el('proof-message').textContent=message;}
+ proof.hidden=state==='idle'&&!revision&&issueReady;el('resume').hidden=!revision||state==='running';
  generate.textContent=state==='running'?'排版中…':outdated?'重新生成校样':'生成整期校样';
+ setOff(generate,!issueReady||!articles.length);if(busy)generate.disabled=true;
+ generate.title=!issueReady?'当前环境未启用整期导出':!articles.length?'先加入文章':'';
  if(state==='running')generate.setAttribute('aria-busy','true');else generate.removeAttribute('aria-busy');
 }
 el('stop-wait').onclick=()=>run?.stop();
@@ -254,6 +257,7 @@ async function runProof(start){
  finally{stopClock();if(run===token)run=null;}
 }
 el('generate').onclick=()=>guard(async()=>{
+ if(!issueReady)throw Error('当前环境未启用整期导出，方案仍可正常保存。');
  await save();
  const id=issueId,expected=revision;
  await runProof(async()=>{const r=await api('start_issue_proof',{issueId:id,expectedRevision:expected});localStorage.setItem('shuye-issue-proof-'+id,r.proofId);return r.proofId;});
@@ -266,5 +270,6 @@ el('resume').onclick=()=>guard(async()=>{
 
 // —— 启动
 await guard(async()=>{
+ try{issueReady=(await api('get_journal_capabilities')).issue?.enabled===true;}catch{issueReady=false;}
  await loadIssues();await loadProjects();draw();savedKey=planKey();paintChrome();status('请选择文章工程，按刊载顺序保存方案。');
 });

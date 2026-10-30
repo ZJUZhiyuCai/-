@@ -2,6 +2,7 @@ import {mathTokens} from './integrity.mjs';
 import { needsFlow, paginateFlow, applyFlowPart, safeFlowCut, minimumFlowUnit } from './flow-layout.mjs';
 import { buildTableElement, cellDisplayMarks, tableRowGroups, headerRowCount } from './table-layout.mjs';
 import { buildRuby } from './ruby.mjs';
+import {journalPreviewStyle,journalFrontMatter} from './journal-preview.mjs';
 const MM = 96 / 25.4;
 export const families = {serif:'SimSun,"Songti SC",serif',sans:'"Microsoft YaHei",sans-serif',kai:'KaiTi,STKaiti,serif'};
 const refs = text => [...text.matchAll(/\[\^([-\w]+)\]/g)].map(m=>m[1]);
@@ -14,6 +15,8 @@ export function styleBlock(el,b,l,continued=false) {
   el.style.textAlign=b.align||(b.type==='heading'?'left':'justify');
   el.style.textIndent=b.type==='paragraph'&&!continued?(b.indentPt!==undefined?`${b.indentPt}pt`:`${b.indent??l.indent}em`):'0';
   el.style.setProperty('--image-max',`${(l.height-l.top-l.bottom)*MM-60}px`);
+  const role=journalPreviewStyle(b,l._journal);
+  if(role){Object.assign(el.style,role,{fontFamily:families[role.fontFamily]});if(continued){el.style.textIndent='0';el.style.paddingTop='0';}}
 }
 function applyMark(span,m) {
   if(m.bold!==undefined)span.style.fontWeight=m.bold?'700':'400';
@@ -93,7 +96,7 @@ function once(doc,measure,entries) {
   doc={...doc,_images,blocks:doc.blocks.filter(b=>!owned.has(b.id))};
   if(needsFlow(doc))return paginateFlow(doc,measure,entries,blockElement);
   measure.style.writingMode='horizontal-tb';measure.style.height='auto';
-  const l={...doc.layout,_notes:doc.notes||[],_images:doc._images},fullWidth=(l.width-l.inner-l.outer)*MM,width=(fullWidth-l.gap*MM*(l.columns-1))/l.columns,height=(l.height-l.top-l.bottom)*MM;
+  const l={...doc.layout,_journal:doc.journal,_notes:doc.notes||[],_images:doc._images},fullWidth=(l.width-l.inner-l.outer)*MM,width=(fullWidth-l.gap*MM*(l.columns-1))/l.columns,height=(l.height-l.top-l.bottom)*MM;
   measure.style.width=`${width}px`;
   const pages=[],pageNotes=[],noteHeights=[],warnings=[],usedPages=[];let col=0,used,notes;
   const newPage=()=>{pages.push(Array.from({length:l.columns},()=>[]));used=Array(l.columns).fill(0);usedPages.push(used);notes=new Set();pageNotes.push(notes);noteHeights.push(0);col=0;};
@@ -107,7 +110,12 @@ function once(doc,measure,entries) {
   function fits(h,text){const capacity=height-reserve(text);return used[col]+h<=capacity+.1&&used.every(n=>n<=capacity+.1);}
   function place(b,text,h,meta={}){pages.at(-1)[col].push({block:b,text,start:0,end:b.text.length,height:h,readOnly:!!b._generated,...meta});used[col]+=h;for(const id of noteIds(text))notes.add(id);noteHeights[noteHeights.length-1]=noteHeight(notes);}
   newPage();
+  measure.style.width=`${fullWidth}px`;
+  const front=journalFrontMatter(doc,b=>size(b,b.text,false,{}),height-l.fontSize*96/72*l.lineHeight*2);
+  measure.style.width=`${width}px`;
+  pages[0][0].push(...front.parts);used.fill(front.height);
   let blocks=doc.blocks.map(b=>['toc','index'].includes(b.type)?{...b,_entries:entries[b.id]||[]}:b);
+  if(front.parts.length)blocks=blocks.slice(front.parts.length);
   const endnotes=l.notesMode==='endnote'?l._notes:l._notes.filter(n=>longNotes.has(n.id));
   if(endnotes.length){blocks=[...blocks,{id:'_endnotes-title',type:'heading',text:'注释',fontFamily:'sans',level:1,_generated:true},...endnotes.map(n=>({id:`_endnote-${n.id}`,type:'paragraph',text:`${n.marker??l._notes.indexOf(n)+1}　${n.text}`,indent:0,_generated:true}))];if(l.notesMode!=='endnote')warnings.push('超过版心高度 35% 的长注释已移到文末，避免脚注溢出。');}
   for(const b of blocks){
@@ -145,7 +153,7 @@ function once(doc,measure,entries) {
     const points=Array.from(b.text);let at=0,offset=0;
     do{
       const text=points.slice(at).join(''),continued=at>0,h=size(b,text,continued,{start:offset});
-      if(!continued&&b.type==='heading'&&used[col]>0&&h+l.fontSize*96/72*l.lineHeight*2>height-reserve(text)-used[col])nextColumn();
+      while(!continued&&b.type==='heading'&&used[col]>0&&h+l.fontSize*96/72*l.lineHeight*2>height-reserve(text)-used[col])nextColumn();
       if(fits(h,text)){place(b,text,h,{start:offset,end:b.text.length});break;}
       let lo=0,hi=points.length-at;
       while(lo<hi){const mid=Math.ceil((lo+hi)/2),s=points.slice(at,at+mid).join('');if(fits(size(b,s,continued,{start:offset}),s))lo=mid;else hi=mid-1;}
@@ -167,7 +175,7 @@ function once(doc,measure,entries) {
     }while(at<points.length);
   }
   for(const b of doc.blocks)for(const id of refs(b.text))if(!l._notes.some(n=>n.id===id))warnings.push(`未找到注释 ${id}，请补充注释内容。`);
-  measure.replaceChildren();return {pages,pageNotes:pageNotes.map(s=>[...s]),noteHeights,warnings:[...new Set(warnings)],width,height};
+  measure.replaceChildren();return {pages,pageNotes:pageNotes.map(s=>[...s]),noteHeights,frontHeights:pages.map((_,i)=>i===0?front.height:0),warnings:[...new Set(warnings)],width,height};
 }
 export function paginate(doc,measure) {
   let entries={},last='',result;

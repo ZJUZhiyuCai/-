@@ -51,11 +51,12 @@ export function setupJournalCloud({api,connection,getDoc,button,status}){
   if(result.stale||connection.dirty||connection.revision!==result.revision)throw Error('稿件已有新修改，本次校样已保留。请保存并重新生成，避免交付旧版。');
   const pdf=await api('download_journal_pdf',{proofId});
   if(connection.dirty||connection.projectId!==projectId||connection.revision!==pdf.revision)throw Error('下载期间文稿或工程已变化；校样已保留，请返回原工程保存后生成。');
-  saveFile(`${getDoc().title}-全文校样.pdf`,Uint8Array.from(atob(pdf.base64),c=>c.charCodeAt(0)),'application/pdf');
-  saveFile(`${getDoc().title}-校样报告.json`,JSON.stringify(result,null,2),'application/json');
+  const bytes=Uint8Array.from(atob(pdf.base64),c=>c.charCodeAt(0)),title=getDoc().title;
+  const url=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'}));
   const errors=result.report.quality.diagnostics.filter(d=>d.severity==='error');
-  status(`${result.pages} 页 PDF 和报告已下载；${result.report.formulaCoverage.total} 个数学区。${errors.length?`预检有 ${errors.length} 项阻断，请按报告修复。`:'请逐页核对公式和版面后交编辑验收。'}`,!!errors.length);
-  showJournalReport(result);
+  status(`${result.pages} 页 PDF 已生成；${result.report.formulaCoverage.total} 个数学区。${errors.length?`预检有 ${errors.length} 项阻断，请按报告修复。`:'请打开校样核对实际版面。'}`,!!errors.length);
+  const dialog=showJournalReport(result,{openPdf:()=>window.open(url,'_blank','noopener'),downloadPdf:()=>saveFile(`${title}-全文校样.pdf`,bytes,'application/pdf'),downloadReport:()=>saveFile(`${title}-校样报告.json`,JSON.stringify(result,null,2),'application/json')});
+  dialog.addEventListener('close',()=>setTimeout(()=>URL.revokeObjectURL(url),60000),{once:true});
   return result;
 
  }

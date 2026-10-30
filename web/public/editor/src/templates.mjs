@@ -1,5 +1,7 @@
 import {validateDocument} from './model.mjs';
+import {journalTemplate} from './journal-template.mjs';
 export function makeTemplate(kind='book',title='未命名文稿'){
+ if(kind==='journal')return validateDocument(journalTemplate(title));
  const b=(id,type,text,extra={})=>({id,type,text,...extra});
  const doc={format:'open-typesetter',version:2,title,layout:{header:title,headerEven:'书页 · 出版工作台'},blocks:[]};
  if(kind==='blank')return validateDocument(doc);

@@ -101,7 +101,7 @@
   /* —— 面板 */
   body.workbench .wb-dock { z-index: 5; flex: none; min-height: 0; background: var(--wb-panel); color: #e4e4e4; }
   body.workbench .wb-dock-left { width: 240px; border-right: 1px solid var(--wb-edge); }
-  body.workbench .wb-dock-right { display: flex; flex-direction: column; width: 300px; border-left: 1px solid var(--wb-edge); }
+  body.workbench .wb-dock-right { display: flex; flex-direction: column; width: 328px; border-left: 1px solid var(--wb-edge); }
   body.workbench .wb-dock :is(.structure, .inspector) { position: static; display: flex; flex-direction: column; width: 100%; min-width: 0; min-height: 0; height: 100%; border: 0; box-shadow: none; background: transparent; }
   body.workbench .wb-dock .inspector { flex: 1 1 auto; }
   body.workbench .wb-dock .structure { overflow: hidden; }
@@ -220,6 +220,11 @@
 
   /* —— 排版助手 */
   body.workbench .assistant-panel { color: #e4e4e4; }
+  body.workbench .assistant-context { margin: 0 0 18px; padding: 0 0 12px; border-bottom: 1px solid var(--wb-rule); color: var(--wb-muted); font: 11px/1.5 var(--wb-mono); }
+  body.workbench .wb-assistant-entry { color: #a9c9f7; }
+  body.workbench .assistant-availability { margin: 0; overflow-wrap: anywhere; }
+  body.workbench .assistant-availability[data-state="on"]::before { content: ""; display: inline-block; width: 5px; height: 5px; margin: 0 7px 2px 0; border-radius: 50%; background: #a9c9f7; }
+  body.workbench .assistant-reconnect { align-self: flex-start; }
   body.workbench .assistant-panel form { display: flex; flex-direction: column; gap: 10px; }
   body.workbench .assistant-panel textarea { min-height: 104px; max-height: 220px; padding: 10px; border-radius: 4px; line-height: 1.65; resize: vertical; }
   body.workbench .assistant-panel textarea::placeholder { color: var(--wb-faint); }
@@ -292,6 +297,26 @@
   body.workbench .workspace-dialog pre { padding: 12px; background: #1b1b1b; color: #ddd; font: 11px/1.6 var(--wb-mono); }
   body.workbench .composition-object { outline-color: #9a9a9a; }
   body.workbench .composition-object:is(.is-selected, :focus) { outline-color: var(--wb-accent); }
+
+  /* A proof is a revision-bound artifact, not a generic success toast. */
+  body.workbench dialog.proof-dialog { width: 760px; max-width: calc(100vw - 64px); max-height: 86vh; overflow: auto; padding: 28px 32px 20px; }
+  body.workbench .proof-heading { display: flex; align-items: baseline; gap: 16px; justify-content: space-between; }
+  body.workbench .proof-heading h2 { font-size: 22px!important; font-weight: 500!important; }
+  body.workbench .proof-heading span { color: var(--wb-muted); font: 11px var(--wb-mono); }
+  body.workbench .proof-metrics { display: grid; grid-template-columns: repeat(4,1fr); margin: 14px 0 24px; padding: 22px 0; border-block: 1px solid var(--wb-rule-2); }
+  body.workbench .proof-metrics>div+div { padding-left: 22px; border-left: 1px solid var(--wb-rule-2); }
+  body.workbench .proof-metrics dt { color: var(--wb-muted); font-size: 11px; }
+  body.workbench .proof-metrics dd { margin: 10px 0 0; font: 24px/1 var(--wb-mono); letter-spacing: -.04em; }
+  body.workbench .proof-actions { display: flex; gap: 8px; }
+  body.workbench .proof-actions button { min-height: 34px; padding: 0 16px; }
+  body.workbench .proof-dialog .proof-context { margin: 12px 0 24px; color: var(--wb-muted); font-size: 11px; }
+  body.workbench .proof-dialog h3 { margin: 24px 0 12px; font-size: 12px; }
+  body.workbench .proof-dialog ol { padding-left: 20px; font-size: 12px; line-height: 1.7; }
+  body.workbench .proof-dialog li strong { font-weight: 500; }
+  body.workbench .proof-review { margin-top: 22px; padding: 15px 0; border-top: 1px solid var(--wb-rule-2); color: var(--wb-muted); font-size: 11px; }
+  body.workbench .proof-review summary { cursor: pointer; }
+  body.workbench .proof-footer { position: static; height: auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0 0; background: transparent; color: var(--wb-muted); border-top: 1px solid var(--wb-rule-2); }
+  body.workbench .proof-footer span { color: var(--wb-faint); font: 10px var(--wb-mono); }
 
   /* —— 窄窗口：仍是桌面应用，只把抽屉改为浮层、收起次要文字 */
   @media (max-width: 1279px) {

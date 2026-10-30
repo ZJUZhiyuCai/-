@@ -9,6 +9,7 @@ export class CloudStore {
   async list(){const r=await this.stmt('SELECT id,title,revision,updated_at,block_count,archived FROM projects WHERE owner=? ORDER BY updated_at DESC LIMIT 200',this.owner).all();return r.results.map(r=>({projectId:r.id,title:r.title,revision:r.revision,updatedAt:r.updated_at,blockCount:r.block_count,archived:!!r.archived}));}
   async read(key){const obj=await this.bucket.get(key);if(!obj)throw Error('DOCUMENT_UNAVAILABLE');return JSON.parse(await obj.text());}
   async get(id){const r=await this.row(id);return {projectId:id,revision:r.revision,updatedAt:r.updated_at,document:await this.read(r.object_key)};}
+  async status(id){const r=await this.row(id);return {projectId:id,revision:r.revision,updatedAt:r.updated_at,archived:!!r.archived};}
   async put(document){const body=JSON.stringify(document);if(new TextEncoder().encode(body).length>20*1024*1024)throw Error('DOCUMENT_LIMIT_20_MB');const key='documents/'+crypto.randomUUID()+'.json';await this.bucket.put(key,body,{httpMetadata:{contentType:'application/json'}});return key;}
   // A transport error may occur after D1 has committed. Never delete the R2
   // object on an ambiguous result: it can already be the current/history document.

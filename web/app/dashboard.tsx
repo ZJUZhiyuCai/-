@@ -15,8 +15,9 @@ async function api(tool:string,args:object={}){
 // 模板缩样按真实毫米比例绘制；版式与 templates.mjs 一致（图书、A4 双栏、A5 竖排、空白）。
 type Tpl={id:string,name:string,w:number,h:number,cols:number,vertical?:boolean,sample:string};
 const TEMPLATES:Tpl[]=[
+  {id:'journal',name:'学术期刊',w:170,h:240,cols:2,sample:'学术的秩序'},
   {id:'book',name:'通用图书',w:185,h:260,cols:1,sample:'文字的秩序'},
-  {id:'academic',name:'学术论文',w:210,h:297,cols:2,sample:'研究与发现'},
+  {id:'academic',name:'A4 论文',w:210,h:297,cols:2,sample:'研究与发现'},
   {id:'poetry',name:'竖排诗集',w:148,h:210,cols:1,vertical:true,sample:'山川与诗'},
   {id:'blank',name:'空白文稿',w:185,h:260,cols:1,sample:''},
 ];
@@ -24,12 +25,12 @@ const FLOW:Record<string,(number|'h')[][]>={book:[[3,'h',4,3,'h',5,4,3,4]],acade
 const POEM=[.62,.46,.7,.4];
 function Sheet({t,s,title,mini=false}:{t:Tpl,s:number,title:string,mini?:boolean}){
   const px=(mm:number)=>Math.round(mm*s*10)/10;
-  const style={width:px(t.w),height:px(t.h),'--s':s} as CSSProperties;
+  const style={width:px(t.w),height:px(t.h),'--s':s,'--sheet-ratio':`${t.w}/${t.h}`} as CSSProperties;
   const block={top:px(20),bottom:px(24),left:px(18),right:px(18)};
   const cls='sheet'+(mini?' is-mini':'');
   if(t.id==='blank')return <div className={cls} style={style} aria-hidden="true"><div className="sheet-block is-guides" style={block}/></div>;
   if(t.vertical)return <div className={cls} style={style} aria-hidden="true"><div className="sheet-block is-vertical" style={block}><span className="sheet-title">{title}</span><div className="sheet-poem">{POEM.map((h,i)=><i key={i} style={{height:`${h*100}%`}}/>)}</div></div><i className="sheet-folio"/></div>;
-  return <div className={cls} style={style} aria-hidden="true"><div className="sheet-block" style={block}><span className="sheet-title">{title}</span><div className="sheet-cols">{(FLOW[t.id]||FLOW.book).map((col,i)=><div key={i}>{col.map((n,j)=>n==='h'?<i key={j} className="sheet-h"/>:<i key={j} className="sheet-p" style={{height:`calc(var(--pitch) * ${n})`}}/>)}</div>)}</div></div><i className="sheet-folio"/></div>;
+  return <div className={cls} style={style} aria-hidden="true"><div className="sheet-block" style={block}><span className="sheet-title">{title}</span>{t.id==='journal'&&<div className="sheet-abstract"/>}<div className="sheet-cols">{(FLOW[t.id==='journal'?'academic':t.id]||FLOW.book).map((col,i)=><div key={i}>{col.map((n,j)=>n==='h'?<i key={j} className="sheet-h"/>:<i key={j} className="sheet-p" style={{height:`calc(var(--pitch) * ${n})`}}/>)}</div>)}</div></div><i className="sheet-folio"/></div>;
 }
 
 function when(iso:string){
@@ -74,7 +75,7 @@ export default function Dashboard({user}:{user:string|null}){
   async function create(){if(!title.trim()){setError('请输入项目名称');return;}setCreating(true);setError('');try{const {makeTemplate}=await import('../public/editor/src/templates.mjs');const projectId='book-'+crypto.randomUUID();await api('create_project',{projectId,document:makeTemplate(template,title.trim())});location.href=sitePath('/editor/index.html?project=')+projectId;}catch(e:any){setError(e.message);setCreating(false);}}
   async function archive(p:Project){if(pending)return;setPending(p.projectId);try{await api('archive_project',{projectId:p.projectId,expectedRevision:p.revision,archived:!p.archived});await load(true);}catch(e:any){setError(e.message);}finally{setPending('');}}
   const signIn=()=>{location.href=sitePath('/signin-with-chatgpt?return_to=/');};
-  function newProject(){if(!user)signIn();else {setTitle('');setTemplate('book');openModal();}}
+  function newProject(){if(!user)signIn();else {setTitle('');setTemplate('journal');openModal();}}
   function startFrom(id:string){if(!user){signIn();return;}setTemplate(id);setTitle('');openModal();}
 
   const active=projects.filter(p=>!p.archived),archived=projects.filter(p=>p.archived),q=search.trim().toLowerCase();
@@ -100,7 +101,7 @@ export default function Dashboard({user}:{user:string|null}){
 
     <main className="board">
       {isLibrary&&<section className={'library'+(tab==='archive'?' is-archive-view':'')} aria-labelledby="libHeading">
-        <h1 id="libHeading" className="a11y-hidden">{tab==='archive'?'已归档项目':'项目库'}</h1>
+        <div className="library-heading"><h1 id="libHeading">{tab==='archive'?'归档':'项目库'}</h1><button type="button" className="text-link" onClick={()=>startFrom('journal')}>从学术期刊模板开始<ArrowUpRight size={14}/></button></div>
         <div className="lib-toolbar">
           <div className="segmented" role="group" aria-label="项目范围">
             <button type="button" aria-pressed={tab==='projects'} onClick={()=>setTab('projects')}>在用<b>{active.length}</b></button>
@@ -115,7 +116,7 @@ export default function Dashboard({user}:{user:string|null}){
             <a className="volume-cover" href={sitePath('/editor/index.html?project=')+p.projectId} aria-label={'打开 '+p.title}>
               <span className={'cover-title'+titleSize(p.title)}>{p.title}</span><i className="cover-rule" aria-hidden="true"/>
               {/* 印记与应用栏同用 <use>：颜色由 CSS 决定，强制颜色模式下随系统文字色，不依赖 SVG 图像的默认黑色。 */}
-              <span className="cover-foot" aria-hidden="true"><svg className="cover-imprint" viewBox="0 0 48 48" width="16" height="16" focusable="false"><use href={sitePath('/brand/shuye-mark.svg#mark')}/></svg><span>r{p.revision}</span></span>
+              <span className="cover-foot" aria-hidden="true"><svg className="cover-imprint" viewBox="0 0 48 48" width="16" height="16" focusable="false"><use href={sitePath('/brand/shuye-mark.svg#mark')}/></svg><span>{p.blockCount} 个组件 · r{p.revision}</span></span>
             </a>
             <div className="volume-meta">
               <time dateTime={p.updatedAt} title={new Date(p.updatedAt).toLocaleString('zh-CN')}>{when(p.updatedAt)}</time>
@@ -140,14 +141,14 @@ export default function Dashboard({user}:{user:string|null}){
 
       {tab==='agent'&&<article className="doc">
         <h1>Agent 与 MCP</h1>
-        <section><h2>连接与操作</h2><div><ol><li>在本网站创建并保存工程。</li><li>连接本网站的 MCP；独立部署时在账号设置创建访问令牌，以 Authorization: Bearer 方式使用。</li><li>调用 list_projects 和 get_project 获取工程及修订号。</li><li>使用 apply_changes 原子修改；先 dryRun 预检再提交。</li><li>编辑器空闲且无未保存修改时，会接收云端更新。</li></ol><code className="endpoint">POST {sitePath('/mcp')}</code>{globalThis.__SHUYE_BASE__&&<a className="text-link" href={sitePath('/account')}>账号与 MCP 令牌设置<ArrowUpRight size={13}/></a>}</div></section>
+        <section><h2>连接与操作</h2><div><ol><li>创建并保存工程。</li><li>连接本网站的 MCP；独立部署时在账号设置创建访问令牌，以 Authorization: Bearer 方式使用。</li><li>用 get_project_context 获取结构、版式和修订号，再按需用 list_components 阅读正文。</li><li>使用 apply_changes 原子修改；先 dryRun 预检再提交。</li><li>编辑器空闲且无未保存修改时，会接收 Agent 更新。</li></ol><code className="endpoint">POST {sitePath('/mcp')}</code>{globalThis.__SHUYE_BASE__&&<a className="text-link" href={sitePath('/account')}>账号与 MCP 令牌设置<ArrowUpRight size={13}/></a>}</div></section>
         <section><h2>示例 · 修改页眉与页码</h2><div><pre className="code">{JSON.stringify({name:'set_layout',arguments:{projectId:'你的工程ID',expectedRevision:1,patch:{header:'书名 · 第一章',footer:'第 {page} 页'},dryRun:true}},null,2)}</pre><p>修订号变化会拒绝旧写入，避免覆盖人工编辑。</p></div></section>
         <section><h2>可操作范围</h2><div><p>页眉页脚、章节、文字、图表、公式、脚注、文献、批注及样式均有结构化操作。</p></div></section>
       </article>}
 
       {tab==='guide'&&<article className="doc">
         <h1>使用说明与功能范围</h1>
-        <section><h2>完成一份文稿</h2><div><ol><li>新建模板项目，进入可视化工作台。</li><li>在纸面直接编辑，或选中组件后修改属性。</li><li>添加表格、公式、脚注、目录和索引。</li><li>保存到云端；历史版本可恢复。</li><li>下载 JSON 备份；打印时选择“另存为 PDF”，关闭浏览器页眉页脚。</li></ol></div></section>
+        <section><h2>完成一份期刊稿件</h2><div><ol><li>从“学术期刊”模板起稿，或在编辑器中导入期刊 Word。</li><li>检查中英文首面角色，补全刊名、卷期与出版信息。</li><li>在纸面直接编辑；需要调整版式时，向排版助手提出要求并核对差异。</li><li>确认后应用建议，生成 PDF 校样，查看对象映射、字体与质量问题。</li><li>逐页核对后交编辑验收；每次返修保留修订记录，可恢复历史版本。</li></ol></div></section>
         <section><h2>限制</h2><div><p>单工程最大 20 MB。排版建议使用桌面浏览器。字体来自访问设备，跨设备分页可能不同。</p></div></section>
         <section><h2>已实现与待完成</h2><div><p>支持流式排版、横竖排、分栏、结构化章节、图片绕排、合并表格、数学公式、注音、注释引用、云端版本与 MCP。</p><p>支持自由图文框串接、母版、跨页表格和长注、ICC 色彩转换、受限 PDF/X-4 输出与有限 PDML 编辑。完整飞翔原生双向兼容与完整 PDF/X 合规验证尚未完成。</p><a className="text-link" href="https://www.founderfx.cn/product/1012.jhtml" target="_blank" rel="noreferrer">功能参照：飞翔印刷版 9.0-1794<ArrowUpRight size={13}/></a></div></section>
         <footer className="doc-colophon">书页 0.7.0</footer>

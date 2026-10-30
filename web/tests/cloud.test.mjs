@@ -18,7 +18,19 @@ function fixture(){
  const store=new CloudStore(db,bucket,'alice');return {store,db,bucket,env:{DB:db,BUCKET:bucket}};
 }
 const doc=()=>makeTemplate('academic','测试出版物');
-test('all templates satisfy strict document model',async()=>{const {store}=fixture();for(const t of ['book','academic','poetry','blank'])assert.equal((await store.create(t,makeTemplate(t,'测试'))).revision,1);});
+test('all templates satisfy strict document model',async()=>{const {store}=fixture();for(const t of ['journal','book','academic','poetry','blank'])assert.equal((await store.create(t,makeTemplate(t,'测试'))).revision,1);});
+test('agent context is bounded, semantic and owner isolated; status avoids reading document storage',async()=>{
+ const {store,db,bucket}=fixture();await store.create('journal',makeTemplate('journal','学术示例'));
+ const context=await callTool(store,'get_project_context',{projectId:'journal',limit:2});
+ assert.equal(context.route,'journal');assert.equal(context.revision,1);assert.equal(context.outline.items.length,2);assert.equal(context.outline.nextOffset,2);assert.deepEqual(context.checks.missingRoles,[]);assert.deepEqual(context.checks.unboundCaptions,[]);assert.equal(context.counts.types.equation,1);assert.equal(context.counts.types.table,1);assert.equal(context.checks.visualPaginationChecked,false);
+ const page=await callTool(store,'get_project_context',{projectId:'journal',offset:2,limit:2});assert.notEqual(page.outline.items[0].id,context.outline.items[0].id);
+ assert.equal(context.counts.referenceBlocks,1);assert.equal(context.counts.bibliographyEntries,0);
+ assert.equal(JSON.stringify(context).includes('以误差平方和为例'),false);
+ const bob=new CloudStore(db,bucket,'bob');await assert.rejects(()=>callTool(bob,'get_project_context',{projectId:'journal'}),/NOT_FOUND/);await assert.rejects(()=>callTool(bob,'get_project_status',{projectId:'journal'}),/NOT_FOUND/);
+ bucket.get=()=>{throw Error('Must not load the document for status');};
+ assert.equal((await callTool(store,'get_project_status',{projectId:'journal'})).revision,1);
+ await store.archive('journal',1,true);assert.equal((await callTool(store,'get_project_status',{projectId:'journal'})).archived,true);
+});
 test('create / list / duplicate / user isolation',async()=>{const {store,db,bucket}=fixture();await store.create('a',doc());assert.equal((await store.list()).length,1);await assert.rejects(()=>store.create('a',doc()),/ALREADY_EXISTS/);const bob=new CloudStore(db,bucket,'bob');assert.deepEqual(await bob.list(),[]);await assert.rejects(()=>bob.get('a'),/NOT_FOUND/);await bob.create('a',doc());assert.equal((await bob.list()).length,1);});
 test('CAS conflict, atomic rollback, dry run and restore',async()=>{const {store}=fixture();await store.create('a',doc());const result=await store.edit('a',1,[{op:'set_title',title:'新书名'}],{dryRun:true});assert.equal(result.document.title,'新书名');assert.equal((await store.get('a')).revision,1);await assert.rejects(()=>store.edit('a',1,[{op:'set_title',title:'错误'},{op:'update_block',blockId:'missing',patch:{text:'x'}}]),/NOT_FOUND/);assert.equal((await store.get('a')).document.title,'测试出版物');await store.edit('a',1,[{op:'set_title',title:'已保存'}]);await assert.rejects(()=>store.edit('a',1,[{op:'set_title',title:'旧写入'}]),/CONFLICT/);assert.equal((await store.restore('a',2,1)).document.title,'测试出版物');assert.equal((await store.get('a')).revision,3);});
 test('concurrent saves have exactly one winner',async()=>{const {store}=fixture();await store.create('a',doc());const r=await Promise.allSettled(['甲','乙'].map(title=>store.edit('a',1,[{op:'set_title',title}])));assert.equal(r.filter(x=>x.status==='fulfilled').length,1);assert.equal((await store.get('a')).revision,2);});

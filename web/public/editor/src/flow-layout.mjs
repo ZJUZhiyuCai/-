@@ -81,7 +81,7 @@ function physicalLines(el,vertical) {
  * following normal paragraphs until clear/end; they are never silently repeated.
  */
 export function paginateFlow(doc,measure,entries,renderBlock) {
-  const l={...doc.layout,_notes:doc.notes||[],_images:doc._images},g=flowGeometry(l),vertical=g.writingMode==='vertical-rl';
+  const l={...doc.layout,_journal:doc.journal,_notes:doc.notes||[],_images:doc._images},g=flowGeometry(l),vertical=g.writingMode==='vertical-rl';
   const warnings=[],pages=[];let column=0,host;
   const capacity=vertical?g.width:g.height;
   measure.style.width=`${g.width}px`;measure.style.height='auto';measure.style.writingMode='horizontal-tb';
