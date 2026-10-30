@@ -162,7 +162,7 @@ def import_docx(data,revision_policy='require-clean'):
                     extras.insert(start,table);group_tables+=1;return
                 if e.tag==W+'object':
                     objects=list(e.iter(O+'OLEObject'))
-                    if len(objects)==1 and legacy_math(objects[0]):
+                    if len(objects)==1 and evidence.is_legacy_math(objects[0]):
                         try:
                             from docx_legacy import equation
                             formula=equation(e,z,rels);ident=uid();inline_math.append({'id':ident,**formula});text+='[[math:'+ident+']]'
