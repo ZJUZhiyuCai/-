@@ -81,5 +81,5 @@ export function setupJournalCloud({api,connection,getDoc,button,status}){
  const generateProof=()=>{if(!proofRequest)proofRequest=prepareProof().finally(()=>{proofRequest=null;});return proofRequest;};
  button('全文期刊 PDF',generateProof);
  button('取回期刊校样',async()=>{const projectId=connection.projectId,proofId=localStorage.getItem(key());if(!proofId)throw Error('当前工程没有已记录的校样任务');await finish(proofId,projectId);});
- return {generateProof,proofState:()=>proofs.state};
+ return {generateProof,proofState:()=>proofs.state,rememberProof:proof=>proofs.remember(proof),reviewProof:finish};
 }

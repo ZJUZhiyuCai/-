@@ -1,4 +1,6 @@
 import {createJournalRuntime} from './journal-runtime.mjs';
+import {createAgentTasks} from './agent-tasks.mjs';
+import {callTool} from '../lib/cloud-tools.mjs';
 import {createLayoutAssistant} from './layout-assistant.mjs';
 import {createServer} from 'node:http';
 import {readFile,stat} from 'node:fs/promises';
@@ -20,6 +22,7 @@ export async function startServer({directory,publicDirectory,origin,basePath='/s
  }
  if(journal)store.JOURNAL_RUNTIME=await createJournalRuntime({engineDirectory:fileURLToPath(new URL(typeof SHUYE_BUNDLED_JOURNAL_PATH==='string'?SHUYE_BUNDLED_JOURNAL_PATH:'../journal-engine/',import.meta.url)),...journal,directory:resolve(directory,'journal-proofs')});
  if(assistant)store.LAYOUT_ASSISTANT=await createLayoutAssistant({...assistant,directory:resolve(directory,'layout-plans')});
+ if(assistant&&journal)store.AGENT_TASKS=await createAgentTasks({directory:resolve(directory,'agent-tasks'),invoke:callTool});
  const attempts=new Map();let activeApi=0;
  const cookie=(token,age=604800)=>`shuye_session=${token}; Path=${basePath}/; HttpOnly; SameSite=Strict; Max-Age=${age}${secure?'; Secure':''}`;
  const brand=`<a class="auth-brand" href="${basePath}/" aria-label="书页 · 项目库"><svg viewBox="0 0 48 48" width="36" height="36" aria-hidden="true" focusable="false"><use href="${basePath}/brand/shuye-mark.svg#mark"/></svg><span>书页</span></a>`;
@@ -86,7 +89,7 @@ export async function startServer({directory,publicDirectory,origin,basePath='/s
  });
  server.requestTimeout=120000;server.headersTimeout=15000;
  await new Promise((ok,fail)=>{server.once('error',fail);server.listen(port,host,ok)});
- return {server,store,close:async()=>{await store.LAYOUT_ASSISTANT?.close();await store.JOURNAL_RUNTIME?.close();await new Promise(r=>server.close(r));store.close();}};
+ return {server,store,close:async()=>{await store.AGENT_TASKS?.close();await store.LAYOUT_ASSISTANT?.close();await store.JOURNAL_RUNTIME?.close();await new Promise(r=>server.close(r));store.close();}};
 }
 if(process.argv[1]&&realpathSync(process.argv[1])===realpathSync(fileURLToPath(import.meta.url))){
  const config=JSON.parse(await readFile(process.env.SHUYE_CONFIG||'/etc/shuye/config.json','utf8'));

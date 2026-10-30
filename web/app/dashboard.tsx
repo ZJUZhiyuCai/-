@@ -6,6 +6,8 @@ import {Plus,Search,ArrowUpRight,Archive,LoaderCircle,RotateCcw,Braces,HelpCircl
 
 type Project={projectId:string,title:string,revision:number,updatedAt:string,blockCount:number,archived:boolean};
 type Tab='projects'|'archive'|'templates'|'agent'|'guide';
+type AgentTask={taskId:string,projectId:string,goal:string,status:string,stage:string,createdAt:string,appliedRevision?:number,revision:number,stale:boolean,proof?:{pages:number},issue?:{message:string}};
+const TASK_NAMES:Record<string,string>={running:'执行中',review:'待审阅',needs_attention:'需要处理',cancelled:'已停止',undone:'已撤销',accepted:'已审阅'};
 const TABS:Tab[]=['projects','archive','templates','agent','guide'];
 async function api(tool:string,args:object={}){
   const r=await fetch(sitePath('/api/mcp-projects'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tool,arguments:args})});
@@ -44,9 +46,16 @@ function when(iso:string){
 const titleSize=(t:string)=>t.length>28?' is-long':t.length>14?' is-mid':'';
 
 export default function Dashboard({user}:{user:string|null}){
+  const [agentTasks,setAgentTasks]=useState<AgentTask[]>([]),[agentAvailable,setAgentAvailable]=useState<boolean|null>(null),[agentError,setAgentError]=useState('');
   const [projects,setProjects]=useState<Project[]>([]),[tab,setTabState]=useState<Tab>('projects'),[search,setSearch]=useState(''),[loading,setLoading]=useState(true),[error,setError]=useState(''),[creating,setCreating]=useState(false),[modal,setModal]=useState(false),[title,setTitle]=useState(''),[template,setTemplate]=useState('book'),[pending,setPending]=useState('');
   async function load(quiet=false){if(!quiet)setLoading(true);try{if(user)setProjects((await api('list_projects')).projects);}catch(e:any){setError(e.message);}finally{setLoading(false);}}
   useEffect(()=>{load();},[]);
+  useEffect(()=>{
+    if(!user||tab!=='agent')return;
+    let cancelled=false,timer:ReturnType<typeof setTimeout>;
+    async function refresh(){try{const cap=await api('get_agent_capabilities');if(cancelled)return;setAgentAvailable(!!cap.enabled);if(!cap.enabled)return;const r=await api('list_agent_tasks',{limit:30});if(cancelled)return;setAgentTasks(r.tasks);setAgentError('');}catch{if(!cancelled)setAgentError('任务连接中断，正在重新连接…');}finally{if(!cancelled)timer=setTimeout(refresh,3000);}}
+    refresh();return()=>{cancelled=true;clearTimeout(timer);};
+  },[user,tab]);
   useEffect(()=>{const t=location.hash.slice(1) as Tab;if(TABS.includes(t))setTabState(t);},[]);
   function setTab(t:Tab){setTabState(t);try{history.replaceState(null,'',t==='projects'?location.pathname+location.search:'#'+t);}catch{}}
   const dialogRef=useRef<HTMLFormElement>(null),openerRef=useRef<HTMLElement|null>(null),creatingRef=useRef(false),searchRef=useRef<HTMLInputElement>(null);creatingRef.current=creating;
@@ -88,11 +97,12 @@ export default function Dashboard({user}:{user:string|null}){
       <a className="brand-home" href={sitePath('/')} aria-label="书页 · 项目库" title="书页"><svg viewBox="0 0 48 48" width="28" height="28" aria-hidden="true" focusable="false"><use href={sitePath('/brand/shuye-mark.svg#mark')}/></svg></a>
       <nav className="workspaces" aria-label="工作区">
         <button type="button" onClick={()=>setTab('projects')} aria-current={isLibrary?'page':undefined}>项目库</button>
+        <button type="button" onClick={()=>setTab('agent')} aria-current={tab==='agent'?'page':undefined}>Agent 任务</button>
         <a href={sitePath('/issue.html')}>整期编排</a>
         <button type="button" onClick={()=>setTab('templates')} aria-current={tab==='templates'?'page':undefined}>模板</button>
       </nav>
       <div className="appbar-end">
-        <button type="button" className="quiet" onClick={()=>setTab('agent')} aria-current={tab==='agent'?'page':undefined} title="Agent 与 MCP"><Braces size={15}/>MCP</button>
+        <button type="button" className="quiet" onClick={()=>setTab('agent')} aria-current={tab==='agent'?'page':undefined} title="Agent 任务与 MCP 连接"><Braces size={15}/>接入</button>
         <button type="button" className="quiet" onClick={()=>setTab('guide')} aria-current={tab==='guide'?'page':undefined} title="使用说明"><HelpCircle size={15}/>说明</button>
         <span className="bar-rule" aria-hidden="true"/>
         <div className="account"><span className="avatar" aria-hidden="true">{user?user.slice(0,1).toUpperCase():'访'}</span><span>{user||'访客'}</span>{user?<a href={sitePath('/signout-with-chatgpt?return_to=/')} target="_top">退出</a>:<a href={sitePath('/signin-with-chatgpt?return_to=/')} target="_top">登录</a>}</div>
@@ -139,16 +149,24 @@ export default function Dashboard({user}:{user:string|null}){
         </button>)}</div>
       </section>}
 
-      {tab==='agent'&&<article className="doc">
-        <h1>Agent 与 MCP</h1>
-        <section><h2>连接与操作</h2><div><ol><li>创建并保存工程。</li><li>连接本网站的 MCP；独立部署时在账号设置创建访问令牌，以 Authorization: Bearer 方式使用。</li><li>用 get_project_context 获取结构、版式和修订号，再按需用 list_components 阅读正文。</li><li>使用 apply_changes 原子修改；先 dryRun 预检再提交。</li><li>编辑器空闲且无未保存修改时，会接收 Agent 更新。</li></ol><code className="endpoint">POST {sitePath('/mcp')}</code>{globalThis.__SHUYE_BASE__&&<a className="text-link" href={sitePath('/account')}>账号与 MCP 令牌设置<ArrowUpRight size={13}/></a>}</div></section>
-        <section><h2>示例 · 修改页眉与页码</h2><div><pre className="code">{JSON.stringify({name:'set_layout',arguments:{projectId:'你的工程ID',expectedRevision:1,patch:{header:'书名 · 第一章',footer:'第 {page} 页'},dryRun:true}},null,2)}</pre><p>修订号变化会拒绝旧写入，避免覆盖人工编辑。</p></div></section>
-        <section><h2>可操作范围</h2><div><p>页眉页脚、章节、文字、图表、公式、脚注、文献、批注及样式均有结构化操作。</p></div></section>
+      {tab==='agent'&&<article className="agent-board">
+        <div className="library-heading"><h1>Agent 任务</h1><button className="text-link" onClick={()=>setTab('projects')}>选择文稿，下达任务<ArrowUpRight size={14}/></button></div>
+        {agentError&&<p role="status" className="notice">{agentError}</p>}
+        {!user?<p className="agent-board-empty">登录后查看你的 Agent 任务。</p>:agentAvailable===false?<p className="agent-board-empty">当前服务未启用后台任务。外部 Agent 仍可通过 MCP 操作文稿。</p>:agentAvailable===null?<p className="agent-board-empty">正在连接任务…</p>:agentTasks.length===0?<div className="agent-board-empty"><h2>下达目标，回来审阅。</h2><p>在期刊文稿中发起任务，Agent 完成排版与校样。</p><button className="primary" onClick={()=>setTab('projects')}>选择文稿<ArrowUpRight size={14}/></button></div>:<>
+          <div className="agent-board-counts">{['running','needs_attention','review','accepted'].map(status=><span key={status}><strong>{agentTasks.filter(t=>t.status===status&&!t.stale).length}</strong>{TASK_NAMES[status]}</span>)}</div>
+          <div className="agent-task-list">{agentTasks.map(task=><a key={task.taskId} className="agent-task-row" href={sitePath('/editor/index.html?project=')+encodeURIComponent(task.projectId)+'&task='+encodeURIComponent(task.taskId)}>
+            <span className="agent-task-state" data-state={task.stale?'stale':task.status}>{task.stale?'版本已更新':TASK_NAMES[task.status]||task.status}</span>
+            <div><h2>{projects.find(p=>p.projectId===task.projectId)?.title||task.projectId}</h2><p>{task.issue?.message||task.goal}</p></div>
+            <span className="agent-task-meta">{task.proof?`${task.proof.pages} 页校样`:`r${task.appliedRevision||task.revision}`}<small>{when(task.createdAt)}</small></span><ArrowUpRight size={16}/>
+          </a>)}</div>
+        </>}
+        <details className="agent-connect"><summary>接入外部 Agent · MCP</summary><div className="agent-connect-body"><p>使用同一组工具读取文稿、下达任务、查询进度、继续与撤销。</p><code className="endpoint">POST {sitePath('/mcp')}</code><pre className="code">{`get_project_context → start_agent_task → get_agent_task
+                                   ↳ resume_agent_task / undo_agent_task`}</pre><p>任务需要 requestId 与 expectedRevision；重试提交复用同一 requestId。底层组件操作仍支持 dryRun 和修订校验。</p>{globalThis.__SHUYE_BASE__&&<a className="text-link" href={sitePath('/account')}>账号与 MCP 令牌设置<ArrowUpRight size={13}/></a>}</div></details>
       </article>}
 
       {tab==='guide'&&<article className="doc">
         <h1>使用说明与功能范围</h1>
-        <section><h2>完成一份期刊稿件</h2><div><ol><li>从“学术期刊”模板起稿，或在编辑器中导入期刊 Word。</li><li>检查中英文首面角色，补全刊名、卷期与出版信息。</li><li>在纸面直接编辑；需要调整版式时，向排版助手提出要求并核对差异。</li><li>确认后应用建议，生成 PDF 校样，查看对象映射、字体与质量问题。</li><li>逐页核对后交编辑验收；每次返修保留修订记录，可恢复历史版本。</li></ol></div></section>
+        <section><h2>完成一份期刊稿件</h2><div><ol><li>从“学术期刊”模板起稿，或在编辑器中导入期刊 Word。</li><li>检查中英文首面角色，补全刊名、卷期与出版信息。</li><li>向 Agent 下达版式目标。它会检查结构、制定方案并自动应用版式。</li><li>Agent 生成 PDF 校样并检查质量；你处理异常、审阅页面，必要时整次撤销。</li><li>逐页核对后交编辑验收；每次返修保留修订记录，可恢复历史版本。</li></ol></div></section>
         <section><h2>限制</h2><div><p>单工程最大 20 MB。排版建议使用桌面浏览器。字体来自访问设备，跨设备分页可能不同。</p></div></section>
         <section><h2>已实现与待完成</h2><div><p>支持流式排版、横竖排、分栏、结构化章节、图片绕排、合并表格、数学公式、注音、注释引用、云端版本与 MCP。</p><p>支持自由图文框串接、母版、跨页表格和长注、ICC 色彩转换、受限 PDF/X-4 输出与有限 PDML 编辑。完整飞翔原生双向兼容与完整 PDF/X 合规验证尚未完成。</p><a className="text-link" href="https://www.founderfx.cn/product/1012.jhtml" target="_blank" rel="noreferrer">功能参照：飞翔印刷版 9.0-1794<ArrowUpRight size={13}/></a></div></section>
         <footer className="doc-colophon">书页 0.7.0</footer>

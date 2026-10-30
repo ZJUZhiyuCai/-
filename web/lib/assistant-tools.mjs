@@ -13,6 +13,6 @@ export function addAssistantTools(add,store){
  add('start_layout_plan','根据用户意图生成待核对的版式建议。保存源修订，不自动修改工程。',obj({...project,...revision,instruction:z.string().trim().min(1).max(1200)}),a=>runtime().start(store,a));
  add('get_layout_plan','读取本人项目的建议、改前改后差异和过期状态。',obj(plan),a=>runtime().get(store,a),true);
  add('cancel_layout_plan','取消当前推理，保留任务记录。',obj(plan),a=>runtime().cancel(store,a));
- add('apply_layout_plan','用户核对差异后应用服务器保存的建议；拒绝过期或重复应用。',obj({...plan,...revision}),a=>runtime().apply(store,a));
+ add('apply_layout_plan','按调用方已获得的任务授权应用服务器保存的建议；拒绝过期或重复应用。',obj({...plan,...revision}),a=>runtime().apply(store,a));
  add('undo_layout_plan','撤销本次已应用建议；有后续修改时拒绝覆盖。',obj({...plan,...revision}),a=>runtime().undo(store,a));
 }

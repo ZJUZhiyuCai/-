@@ -22,7 +22,7 @@
 
 ## Agent / MCP
 
-当前工作区 `POST /mcp` 提供 100 个工具，与编辑器共享用户隔离的云端工程。Sites 使用发布生成的个人插件，自托管使用 Bearer MCP。`list_projects` → `get_project_context` → `list_components` → `apply_changes`，修改必须携带 `expectedRevision`，可先使用 `dryRun:true`。所有操作按稳定组件 ID 定位，无 computer-use 依赖。新增期刊工具先调用 `get_journal_capabilities`，只有 `enabled:true` 才能进行原生导入和全文 PDF 编译；Workers 部署不支持本机 TeX。
+当前工作区 `POST /mcp` 提供 108 个工具，与编辑器共享用户隔离的云端工程。Sites 使用发布生成的个人插件，自托管使用 Bearer MCP。`list_projects` → `get_project_context` → `list_components` → `apply_changes`，修改必须携带 `expectedRevision`，可先使用 `dryRun:true`。所有操作按稳定组件 ID 定位，无 computer-use 依赖。新增期刊工具先调用 `get_journal_capabilities`，只有 `enabled:true` 才能进行原生导入和全文 PDF 编译；Workers 部署不支持本机 TeX。
 
 `inspect_journal_docx` 可在创建项目之前检查原稿的修订、公式和图像。125 MP 单帧 TIFF、MTEF/EMF 来源校验与修订策略的整合边界见 [导入链验证](docs/journal-import-integration.md)。
 
@@ -65,4 +65,4 @@ MIT。仅包含独立源代码与声明的第三方依赖，不包含方正程�
 
 ## AI 排版工作台
 
-编辑器默认显示纸面、任务入口与排版助手，完整工具集中在“全部工具”（Ctrl/⌘K），窄窗口按需展开助手。助手默认关闭；独立服务器可配置本机 Ollama。模型只提出受限版式参数建议，经差异核对、显式应用、版本绑定校样及可撤销版本记录完成闭环。配置和真实模型验收见 [AI 排版工作台](docs/ai-workbench.md)。
+期刊编辑器默认打开 Agent 任务面板，完整工具集中在“全部工具”（Ctrl/⌘K）。独立服务器配置本机 Ollama 与期刊引擎后，可连续执行检查、版式应用、PDF 校样和机器检查；人处理例外、审阅结果或整次撤销。后台任务关闭页面仍可继续，外部 Agent 使用同一组任务工具。见 [Agent 工作流](docs/agent-workflow.md)。配置和真实模型验收见 [AI 排版工作台](docs/ai-workbench.md)。

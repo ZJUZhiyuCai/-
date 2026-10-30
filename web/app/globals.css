@@ -176,3 +176,14 @@ body .auth-card input{border-color:var(--rule-2);background:var(--field);color:v
 
 @media(max-width:1100px){.lib-toolbar,.shelf{padding-right:28px;padding-left:28px}.notice{margin-right:28px;margin-left:28px}.tpl-shelf{gap:36px}.shelf{gap:34px 26px}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+.agent-board{max-width:1160px;margin:0 auto;padding:38px 40px 60px}
+.agent-board-counts{display:flex;gap:42px;border-top:1px solid var(--edge,#414141);padding:24px 0 30px;color:#a9a9a9;font-size:12px}
+.agent-board-counts span{display:flex;align-items:baseline;gap:10px}.agent-board-counts strong{font-size:32px;font-weight:400;color:#ddd;font-variant-numeric:tabular-nums}
+.agent-task-list{border-top:1px solid #494949}.agent-task-row{display:grid;grid-template-columns:94px minmax(0,1fr) 110px 18px;align-items:center;gap:18px;padding:24px 0;border-bottom:1px solid #444;text-decoration:none;color:#ccc}
+.agent-task-row:hover{background:#ffffff04}.agent-task-row h2{margin:0 0 8px;font-size:16px;font-weight:500;color:#eee}.agent-task-row p{margin:0;color:#a4a4a4;font-size:12px;line-height:1.7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.agent-task-state{font-size:12px;color:#a8a8a8}.agent-task-state:before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin-right:8px}
+.agent-task-state[data-state=running],.agent-task-state[data-state=review]{color:#a9c1e7}.agent-task-state[data-state=needs_attention]{color:#dfbb8a}
+.agent-task-meta{text-align:right;font-size:12px;color:#c1c1c1}.agent-task-meta small{display:block;margin-top:8px;color:#8f8f8f;font-size:11px}
+.agent-board-empty{padding:60px 0 70px;color:#aaa;font-size:13px}.agent-board-empty h2{font-size:30px;font-weight:400;color:#e8e8e8;letter-spacing:-.6px}.agent-board-empty .primary{margin-top:15px}
+.agent-connect{margin-top:36px;border-top:1px solid #484848;padding-top:18px;color:#aaa;font-size:12px}.agent-connect summary{cursor:pointer}.agent-connect-body{max-width:750px;margin:20px 0;color:#bbb;line-height:1.8}.agent-connect .code{white-space:pre-wrap;padding:18px;background:#252525;font-size:12px}
