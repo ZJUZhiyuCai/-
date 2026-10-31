@@ -175,6 +175,8 @@ export function setupWorkbench({getDoc,getSelected=()=>null,select=()=>{},connec
  const panelToggle=iconButton('panel','属性',()=>toggleDock('right'),'wb-toggle');panelToggle.title='Agent 任务、版式与组件';
  const progress=el('div',undefined,'wb-progress');progress.setAttribute('aria-hidden','true');
  const assistantEntry=button('Agent 任务',()=>showProps('assistant',true),'wb-tools wb-assistant-entry');
+ const importEntry=proxy(find('导入期刊 Word'),()=>button('导入 Word',undefined,'wb-tools'));
+ if(importEntry)actions.append(importEntry);
  actions.append(assistantEntry,proofButton,toolsButton,panelToggle);
  header.append(...[back,titleBlock,actions,progress].filter(Boolean));
  body.prepend(header);
@@ -313,7 +315,8 @@ export function setupWorkbench({getDoc,getSelected=()=>null,select=()=>{},connec
  const props=button('属性',()=>showProps('block',true));
  const deleteComponent=proxy($('deleteBlock'),()=>button('删除组件',undefined,'wb-delete'));deleteComponent.id='wbDeleteBlock';deleteComponent.title='删除选中的组件；非文字编辑状态可按 Delete / Backspace';
  const up=proxy($('moveUp'),()=>iconButton('up','上移组件',undefined,'wb-icon-only')),down=proxy($('moveDown'),()=>iconButton('down','下移组件',undefined,'wb-icon-only'));
- selectionBar.append(selectionName,props,up,down,deleteComponent);
+ const editTable=proxy(find('编辑表格'),()=>button('编辑表格'));
+ selectionBar.append(selectionName,...[editTable,props,up,down,deleteComponent].filter(Boolean));
  const assetNotice=el('div',undefined,'wb-asset-notice'),assetSummary=el('span'),assetLocate=button('定位',()=>{}),assetAttach=button('补入图片',()=>{});
  assetNotice.setAttribute('role','region');assetNotice.setAttribute('aria-label','缺失图片');assetNotice.append(assetSummary,assetLocate,assetAttach);assetNotice.hidden=true;
  function syncSelection(){
@@ -322,6 +325,7 @@ export function setupWorkbench({getDoc,getSelected=()=>null,select=()=>{},connec
   const caption=(b?.captionIds||[]).map(id=>byId.get(id)?.text||'').find(t=>/^(图|Fig|表|Tab)/i.test(t.trim()));
   selectionName.textContent=b?`${blockLabel(b)} · ${(caption||b.text||'未命名').slice(0,48)}`:'选择纸面或结构中的组件';
   selectionName.title=b?(caption||b.text||blockLabel(b)):'';
+  if(editTable)editTable.hidden=b?.type!=='table';
   deleteComponent.textContent='删除'+blockLabel(b);deleteComponent.disabled=props.disabled=!b;
   const missing=figureGroups(d).filter(g=>!g.ownerId&&!g.adjacentId);
   assetNotice.hidden=compMode||!missing.length;
@@ -333,6 +337,8 @@ export function setupWorkbench({getDoc,getSelected=()=>null,select=()=>{},connec
   }
  }
  document.addEventListener('shuye:selection-changed',syncSelection);
+ document.addEventListener('shuye:edit-journal',()=>find('期刊模板')?.click());
+ document.addEventListener('shuye:locate-block',e=>{const id=e.detail.blockId;if(!getDoc().blocks.some(b=>b.id===id))return;select(id);showProps('block',true);canvas.querySelector(`[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({block:'center',behavior:motion()});});
  document.addEventListener('shuye:document-changed',()=>queueMicrotask(syncSelection));
  stage.append(selectionBar,assetNotice,canvas,scrim);workspace.append(menu);
  new MutationObserver(()=>{trackPage();paintZoom();}).observe($('pages'),{childList:true});

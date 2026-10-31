@@ -89,7 +89,10 @@ export function journalPlan(doc,{width,height,minDpi=300,roles={},journal={},col
   }
   if(b.type==='image'){
    const pixels=imagePixels(b.src),owner=cellOwners.get(b.id);
-   let available=b.placement==='full-width'?bodyWidth:measure;
+   // A bound scientific figure defaults to the full measure. The DPI cap still
+   // limits its physical size; explicit column/float choices remain authoritative.
+   if(preset&&!owner&&b.captionIds?.length&&(!b.placement||b.placement==='auto')&&!b.sideTextIds?.length&&(!b.wrap||b.wrap==='none'))patch.placement='full-width';
+   let available=(patch.placement||b.placement)==='full-width'?bodyWidth:measure;
    if(owner){const tb=owner.table,n=tb.rows[0].length,c=owner.cell,span=tb.merges?.find(m=>m.row===c.row&&m.col===c.col)?.colspan||1,weights=tb.columnWidths||Array(n).fill(100/n);available=bodyWidth*weights.slice(c.col,c.col+span).reduce((a,b)=>a+b,0)/weights.reduce((a,b)=>a+b,0);}
    if(pixels){const physical=pixels.width/minDpi*25.4,pct=Math.min(b.width|| (owner?100:80),physical/available*100,owner?.maxHeight?owner.maxHeight*pixels.width/pixels.height/available*100:100);patch.width=Math.max(10,Math.floor(pct*100)/100);if(pct<10)diagnostics.push({severity:'warning',code:'IMAGE_TOO_SMALL',blockId:b.id,message:'原图无法在最小宽度达到目标 DPI，需提供更清晰原图或调整图组。'});}
    else diagnostics.push({severity:'warning',code:'IMAGE_DIMENSIONS_UNKNOWN',blockId:b.id,message:'无法读取像素尺寸，请在 PDF 预检中核对。'});

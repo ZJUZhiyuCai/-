@@ -30,6 +30,8 @@ import {setupNativeEditor} from './native-ui.mjs';
 import {setupWorkbench} from './workbench.mjs';
 import {blockDeletion,blockLabel,isBlockDeleteKey} from './block-actions.mjs';
 import {figureGroups} from './figure-audit.mjs';
+import {createDraftStore} from './draft-store.mjs';
+import {confirmAction} from './dialogs.mjs';
 const $ = (id) => document.getElementById(id),
   storageKey = "shuye-web-"+(new URLSearchParams(location.search).get("project")||"sample"),
   history = new History();
@@ -38,14 +40,20 @@ let doc = makeTemplate("book","文字的秩序"),
   zoom = 0.8,
   paginationTimer,
   editingSnapshot = null,
+  editingSelected = null,
   renderVersion = 0,
   lastPages = [];
 let advancedUI, compositionUI, selectionRange=null;
+const localDrafts=createDraftStore();
+let localDraftTimer,localDraftSequence=0;
 let startupWarning = "",
   protectAutosave = false;
 try {
-  const saved = localStorage.getItem(storageKey);
-  if (saved && !new URLSearchParams(location.search).has("project")) doc = validateDocument(JSON.parse(saved));
+  if(!new URLSearchParams(location.search).has('project')){
+    const current=await localDrafts.read('@anonymous');
+    if(current?.document)doc=validateDocument(current.document);
+    else {let saved;try{saved=localStorage.getItem(storageKey);}catch{}if(saved){doc=validateDocument(JSON.parse(saved));await localDrafts.write('@anonymous',{document:doc});try{localStorage.removeItem(storageKey);}catch{}}}
+  }
 } catch (e) {
   protectAutosave = true;
   startupWarning = "自动保存未能读取，已显示示例。" + e.message;
@@ -57,20 +65,31 @@ function status(message, error = false) {
 }
 function persist() {
   document.dispatchEvent(new Event('shuye:document-changed'));
+  if(new URLSearchParams(location.search).has('project')){
+    // ProjectConnection owns project-scoped IndexedDB drafts. Do not duplicate
+    // image-heavy cloud documents into the small anonymous localStorage slot.
+    return;
+  }
   if (protectAutosave) {
     $("saveState").textContent = "原自动保存已保留，请另存工程";
     return;
   }
-  try {
-    localStorage.setItem(storageKey, JSON.stringify(doc));
-    $("saveState").textContent = "已自动保存到此浏览器";
-  } catch {
-    $("saveState").textContent = "自动保存失败，请保存工程";
-    status("浏览器存储空间不足或已禁用，请点击“保存工程”备份。", true);
+  clearTimeout(localDraftTimer);const sequence=++localDraftSequence;
+  localDraftTimer=setTimeout(()=>saveAnonymousDraft(sequence),400);
+}
+async function saveAnonymousDraft(sequence=++localDraftSequence){
+  if(protectAutosave||new URLSearchParams(location.search).has('project'))return;
+  try{
+    await localDrafts.write('@anonymous',{document:doc});
+    if(sequence===localDraftSequence&&!new URLSearchParams(location.search).has('project'))$('saveState').textContent='已自动保存到此浏览器';
+  }catch{
+    if(sequence===localDraftSequence&&!new URLSearchParams(location.search).has('project')){$('saveState').textContent='自动保存失败，请下载备份';status('浏览器草稿保存失败，请使用“下载备份”保存工程。',true);}
   }
 }
+window.addEventListener('pagehide',()=>{clearTimeout(localDraftTimer);void saveAnonymousDraft();});
+
 function checkpoint() {
-  history.push(doc);
+  history.push(doc,selected);
   updateHistory();
 }
 function updateHistory() {
@@ -261,6 +280,7 @@ async function render() {
             clearTimeout(paginationTimer);
             choose(part.block.id);
             editingSnapshot = JSON.stringify(doc);
+            editingSelected = selected;
           };
           el.oninput = () => {
             const b = doc.blocks.find((b) => b.id === part.block.id);
@@ -297,7 +317,7 @@ async function render() {
           };
           el.onblur = () => {
             if (editingSnapshot && editingSnapshot !== JSON.stringify(doc)) {
-              history.push(JSON.parse(editingSnapshot));
+              history.push(JSON.parse(editingSnapshot),editingSelected);
               updateHistory();
             }
             editingSnapshot = null;
@@ -352,7 +372,7 @@ function refresh() {
 function change(fn) {
   const previous=structuredClone(doc),previousSelected=selected;
   try{fn();doc=validateDocument(doc);}catch(e){doc=previous;selected=previousSelected;fillLayout();fillBlock();status(e.message,true);return Promise.resolve(false);}
-  history.push(previous);
+  history.push(previous,previousSelected);
   return refresh();
 }
 function insert(type, extra = {}) {
@@ -438,26 +458,20 @@ $("newDoc").onclick = () => {
     selected = doc.blocks[0].id;
   });
 };
-$("undo").onclick = () => {
-  const prev = history.undo(doc);
-  if (prev) {
-    doc = prev;
-    selected = doc.blocks.some((b) => b.id === selected)
-      ? selected
-      : doc.blocks[0]?.id;
-    refresh();
-  }
-};
-$("redo").onclick = () => {
-  const next = history.redo(doc);
-  if (next) {
-    doc = next;
-    selected = doc.blocks.some((b) => b.id === selected)
-      ? selected
-      : doc.blocks[0]?.id;
-    refresh();
-  }
-};
+function restoreHistory(direction) {
+  const next = history[direction](doc,selected);
+  if (!next) return;
+  doc = next;
+  selected = doc.blocks.some(b=>b.id===history.selection) ? history.selection : doc.blocks[0]?.id;
+  editingSnapshot=null;selectionRange=null;
+  void refresh().then(()=>{
+    if(selected)document.querySelector(`.paper .block[data-id="${CSS.escape(selected)}"]`)?.scrollIntoView({block:'nearest'});
+    const message=direction==='undo'?'已撤销，已恢复原组件选择。':'已重做。';
+    status(message);notice(message);
+  });
+}
+$("undo").onclick = () => restoreHistory('undo');
+$("redo").onclick = () => restoreHistory('redo');
 function fitPage() {
   const canvas=document.querySelector('.canvas'),mm=96/25.4;
   if($('zoom').value!=='fit')return;
@@ -473,6 +487,7 @@ $("guides").onchange = () =>
   $("pages").classList.toggle("hide-guides", !$("guides").checked);
 $("blockText").onfocus = () => {
   editingSnapshot = JSON.stringify(doc);
+  editingSelected = selected;
 };
 $("blockText").oninput = () => {
   const b = active();
@@ -493,7 +508,7 @@ $("blockText").oninput = () => {
 };
 $("blockText").onblur = () => {
   if (editingSnapshot && editingSnapshot !== JSON.stringify(doc)) {
-    history.push(JSON.parse(editingSnapshot));
+    history.push(JSON.parse(editingSnapshot),editingSelected);
     updateHistory();
   }
   editingSnapshot = null;
@@ -639,7 +654,7 @@ $("fileInput").onchange = async (e) => {
       } else if (ext === "txt") imported = plainDocument(text, title);
       else throw Error("请选择 JSON、TXT、FBD 或 DOCX。");
     }
-    if (!confirm(`打开“${f.name}”并替换当前文稿？当前文稿可通过撤销恢复。`))
+    if (!await confirmAction(`打开“${f.name}”并替换当前文稿？当前文稿可通过撤销恢复。`))
       return;
     await change(() => {
       replacementStarted=true;

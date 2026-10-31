@@ -81,3 +81,11 @@ test('full width figures are constrained against the full measure for 300 DPI',(
  const result=applyOperations(doc,journalPlan(doc,{profile:'compact-academic'}).operations).document;
  assert.ok(result.blocks[0].width<53);assert.ok(900/((144*result.blocks[0].width/100)/25.4)>=300);
 });
+
+test('caption-bound auto figures use full measure without overriding explicit human placement',()=>{
+ const png=Buffer.alloc(24);png[0]=137;png[1]=80;png.writeUInt32BE(1000,16);png.writeUInt32BE(900,20);
+ const source=checkDocument({format:'open-typesetter',version:4,blocks:[{id:'img',type:'image',width:80,src:'data:image/png;base64,'+png.toString('base64'),captionIds:['c']},{id:'c',type:'paragraph',text:'图1 实验'}]});
+ const prepared=applyOperations(source,journalPlan(source,{profile:'compact-academic'}).operations).document;
+ assert.equal(prepared.blocks[0].placement,'full-width');assert.ok(prepared.blocks[0].width*144/100<=1000/300*25.4);assert.equal(prepared.blocks[0].src,source.blocks[0].src);
+ source.blocks[0].placement='column';const manual=applyOperations(source,journalPlan(source,{profile:'compact-academic'}).operations).document;assert.equal(manual.blocks[0].placement,'column');
+});

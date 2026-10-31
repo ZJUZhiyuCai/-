@@ -25,10 +25,11 @@ export function setupAgentTasks({panel,connection,getDoc,notify,locate=()=>{},on
  const scope=el('p','自动应用版式、生成校样，可随时停止或撤销。','agent-scope');
  form.append(intro,prompt,recipes,submit,scope);
  const notice=el('p',undefined,'agent-notice');notice.setAttribute('role','status');notice.hidden=true;
+ const recheck=button('保存并重新检查',()=>{mode=task.appliedRevision||task.proof?.status==='complete'?'proof':task.mode;prompt.value=mode==='proof'?'保留现有版式，生成全文 PDF 校样并检查质量。':task.goal;editing=true;render();if(!submit.disabled)form.requestSubmit();},'primary agent-submit');recheck.hidden=true;
  const taskCard=el('section',undefined,'agent-task');taskCard.setAttribute('aria-label','Agent 任务');
  const newTask=button('新任务',()=>{editing=true;mode='prepare';prompt.value=prepareGoal;render();prompt.focus();},'agent-new');newTask.hidden=true;
  const retry=button('重新连接',async()=>{await connect();await refresh();}, 'agent-reconnect');retry.hidden=true;
- panel.classList.add('agent-panel');panel.append(top,history,form,notice,taskCard,newTask,retry);
+ panel.classList.add('agent-panel');panel.append(top,history,form,notice,recheck,taskCard,newTask,retry);
  const say=(text,error=false)=>{localNotice=false;notice.textContent=text;notice.hidden=!text;notice.classList.toggle('error',error);};
  function sync(){
   const supported=!getDoc().composition&&(mode==='prepare'||!!getDoc().journal),running=tasks.some(t=>t.status==='running');
@@ -40,7 +41,12 @@ export function setupAgentTasks({panel,connection,getDoc,notify,locate=()=>{},on
   taskCard.hidden=!task||editing;
   newTask.hidden=!task||editing||running||!!pending;
   for(const b of taskCard.querySelectorAll('[data-write]'))b.disabled=busy||!taskCanWrite(task,connection);
-  if(connection.dirty&&task?.status==='running'){say('你有未保存的修改。可停止 Agent 后接管；新输入会保留在本地。');localNotice=true;}else if(localNotice)say('');
+  const changed=!!task&&(connection.dirty||task.stale||connection.revision!==task.currentRevision);
+  recheck.hidden=editing||!changed||running;recheck.disabled=busy||!enabled||connection.writing;
+  recheck.textContent=connection.dirty?'保存并重新检查':'重新检查当前版本';
+  if(connection.dirty&&task?.status==='running'){say('你有未保存的修改。可停止 Agent 后接管；新输入会保留在本地。');localNotice=true;}
+  else if(changed&&!editing&&!running){say('文稿已有修改。下方是修改前的记录，请重新检查当前版本。');localNotice=true;}
+  else if(localNotice)say('');
   onState(tasks.find(t=>t.status==='running')||task);
  }
  function render(){

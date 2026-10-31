@@ -56,3 +56,10 @@ test('changing a light-weight source-han profile requires an explicit compatible
  cjk.value='fandol';const save=nodes.find(n=>n.textContent==='应用期刊模板');save.onclick();assert.deepEqual(d,before);assert.match(messages[0],/轻字重只适用于思源/);
  weight.value='regular';save.onclick();assert.equal(d.layout.fontSet,'fandol');assert.equal(d.journal.bodyWeight,'regular');
 });
+
+test('report links metadata and source warnings back to editable controls',t=>{
+ const nodes=fakeDom(t),called=[];
+ const dialog=showJournalReport({revision:2,pages:1,report:{quality:{diagnostics:[{code:'JOURNAL_METADATA_REVIEW',severity:'warning',message:'请补全中文刊名',field:'name'},{code:'PUBLICATION_METADATA_PLACEHOLDER',severity:'warning',message:'文章编号仍有占位符',blockId:'cite'}]}}},{editJournal:()=>called.push('journal'),locateBlock:id=>called.push(id)});
+ nodes.find(n=>n.textContent==='补全刊物信息').onclick();assert.deepEqual(called,['journal']);assert.equal(dialog.removed,true);
+ nodes.find(n=>n.textContent==='定位并编辑').onclick();assert.deepEqual(called,['journal','cite']);
+});

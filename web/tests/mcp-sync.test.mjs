@@ -77,3 +77,12 @@ test('typing during the second-stage document fetch is never replaced',async()=>
  pending.resolve({revision:2,document:{text:'agent edit'}});assert.equal(await poll,false);assert.equal(doc.text,'manual edit');assert.equal(c.revision,1);
 });
 
+
+test('durable draft checkpoint precedes save and retains the captured snapshot during new typing',async()=>{
+ let doc,checkpoint=deferred(),captured,write;
+ const c=new ProjectConnection({getDoc:()=>doc,replaceDoc:async d=>{doc=d;},beforeSave:async value=>{captured=value;await checkpoint.promise;},api:async(name,args)=>{if(name==='get_project')return {revision:1,document:{text:'old'}};write=args;return {revision:2};}});
+ await c.open('paper');doc.text='saved snapshot';const saving=c.save();doc.text='new typing';
+ assert.equal(write,undefined);assert.equal(captured.document.text,'saved snapshot');checkpoint.resolve();await saving;
+ assert.equal(write.document.text,'saved snapshot');assert.equal(c.dirty,true);assert.equal(doc.text,'new typing');
+ checkpoint=deferred();write=undefined;const cancelled=c.save();c.disconnect();checkpoint.resolve();assert.equal(await cancelled,false);assert.equal(write,undefined);
+});

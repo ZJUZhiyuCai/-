@@ -18,6 +18,17 @@ def fixture(kind='image'):
 
 
 class FigureAssetsTests(unittest.TestCase):
+    def test_export_report_retains_actionable_metadata_and_prefix_warnings(self):
+        doc={'journal':{'template':'cn-academic'},'blocks':[
+            {'id':'prefix','type':'paragraph','text':'unclassified source'},
+            {'id':'cite','type':'paragraph','role':'citation','text':'Example[J]. XX(X): X-X.'}]}
+        before=deepcopy(doc);out=BytesIO();pdf=PdfWriter();pdf.add_blank_page(200,300);pdf.write(out)
+        notes=inspect_output({'pdf':out.getvalue(),'report':{}},doc)['report']['quality']['diagnostics']
+        self.assertTrue(any(d.get('field')=='name' and d['message']=='请补全中文刊名' for d in notes))
+        self.assertTrue(any(d['code']=='UNCLASSIFIED_PREFIX' and d['blockId']=='prefix' for d in notes))
+        self.assertTrue(any(d['code']=='PUBLICATION_METADATA_PLACEHOLDER' and d['blockId']=='cite' for d in notes))
+        self.assertEqual(doc,before)
+
     def test_proof_keeps_unresolved_editorial_comments_and_original_import_evidence(self):
         doc=fixture();doc['comments']=[{'id':'c','blockId':'asset','text':'Need original image','resolved':False}]
         doc['importReports']=[{'sourceSha256':'a'*64,'diagnostics':[{'code':'DOCX_FIGURE_CONTENT_MISSING','severity':'warning','message':'Original had no images'}]}]

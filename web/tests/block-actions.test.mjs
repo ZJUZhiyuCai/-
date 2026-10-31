@@ -51,3 +51,18 @@ test('held keys, composition and text-editing modifier combinations cannot repea
  assert.equal(isBlockDeleteKey({key:'Delete'}),true);
  for(const flag of ['repeat','isComposing','altKey','ctrlKey','metaKey','shiftKey'])assert.equal(isBlockDeleteKey({key:'Backspace',[flag]:true}),false);
 });
+
+test('undo restores the deleted component selection, redo restores the following selection',()=>{
+ const before=doc([p('a'),p('b'),p('c')]),history=new History();history.push(before,'b');
+ const removed=blockDeletion(before,'b');assert.equal(removed.selected,'c');
+ assert.deepEqual(history.undo(removed.document,removed.selected),before);assert.equal(history.selection,'b');
+ assert.deepEqual(history.redo(before,'b'),removed.document);assert.equal(history.selection,'c');
+ // A second deletion after undo targets the restored block, never its neighbour.
+ const restored=history.undo(removed.document,'c');
+ assert.deepEqual(blockDeletion(restored,history.selection).document.blocks.map(b=>b.id),['a','c']);
+});
+test('selection history obeys limits and clears redo when a new edit is made',()=>{
+ const history=new History(1),a=doc([p('a')]),b=doc([p('a'),p('b')]);history.push(a,'a');history.push(b,'b');
+ assert.deepEqual(history.undo(a,'a'),b);assert.equal(history.selection,'b');assert.equal(history.undo(b,'b'),null);
+ history.push(b,'b');assert.equal(history.redo(a,'a'),null);history.clear();assert.equal(history.selection,null);
+});
